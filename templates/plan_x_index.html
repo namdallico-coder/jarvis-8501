@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>PLAN X 8501 Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: Arial, sans-serif;
+        }
+        .wrap {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 30px;
+        }
+        .sub {
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #111827;
+            border: 1px solid #334155;
+            border-radius: 14px;
+            padding: 16px;
+        }
+        .card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #94a3b8;
+            font-weight: normal;
+        }
+        .card .v {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .section-title {
+            font-size: 20px;
+            margin: 28px 0 12px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #111827;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        th, td {
+            border-bottom: 1px solid #1e293b;
+            padding: 12px 10px;
+            font-size: 13px;
+            text-align: center;
+            vertical-align: top;
+        }
+        th {
+            background: #1e293b;
+            color: #cbd5e1;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background: #172033;
+        }
+        .tag {
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .long { background: #064e3b; color: #6ee7b7; }
+        .short { background: #7f1d1d; color: #fca5a5; }
+        .wait { background: #3f3f46; color: #e4e4e7; }
+        .watch { background: #78350f; color: #fcd34d; }
+        .skip { background: #1f2937; color: #94a3b8; }
+        .agree { background: #14532d; color: #86efac; }
+        .conflict { background: #7f1d1d; color: #fecaca; }
+        .note {
+            text-align: left;
+            white-space: pre-line;
+            line-height: 1.45;
+            min-width: 280px;
+        }
+        .small {
+            color: #94a3b8;
+            font-size: 12px;
+        }
+        @media (max-width: 1200px) {
+            .grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
+            .grid { grid-template-columns: 1fr; }
+            th, td { font-size: 11px; padding: 8px 6px; }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>🚀 PLAN X 8501 DASHBOARD</h1>
+    <div class="sub">
+        마지막 업데이트: {{ data.updated_at }} |
+        페어 수: {{ data.count }} |
+        ENTRY 신호: {{ data.entry_signals }}
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>GPT LONG</h3>
+            <div class="v">{{ data.summary.gpt_long }}</div>
+        </div>
+        <div class="card">
+            <h3>GPT SHORT</h3>
+            <div class="v">{{ data.summary.gpt_short }}</div>
+        </div>
+        <div class="card">
+            <h3>JARVIS LONG</h3>
+            <div class="v">{{ data.summary.jarvis_long }}</div>
+        </div>
+        <div class="card">
+            <h3>JARVIS SHORT</h3>
+            <div class="v">{{ data.summary.jarvis_short }}</div>
+        </div>
+
+        <div class="card">
+            <h3>AGREE</h3>
+            <div class="v">{{ data.summary.agree }}</div>
+        </div>
+        <div class="card">
+            <h3>CONFLICT</h3>
+            <div class="v">{{ data.summary.conflict }}</div>
+        </div>
+        <div class="card">
+            <h3>WATCH</h3>
+            <div class="v">{{ data.summary.watch }}</div>
+        </div>
+        <div class="card">
+            <h3>NO TRADE</h3>
+            <div class="v">{{ data.summary.no_trade }}</div>
+        </div>
+    </div>
+
+    <div class="section-title">📊 GPT vs JARVIS 비교</div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>PAIR</th>
+                <th>X_SCORE</th>
+                <th>STATUS</th>
+                <th>GPT</th>
+                <th>JARVIS</th>
+                <th>비교</th>
+                <th>BIAS</th>
+                <th>FINAL</th>
+                <th>GPT START/END</th>
+                <th>JARVIS START/END</th>
+                <th>REASON</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in data.rows %}
+            <tr>
+                <td><b>{{ row.pair }}</b></td>
+                <td>{{ row.x_score }}</td>
+                <td>{{ row.status }}</td>
+
+                <td>
+                    {% set gd = row.gpt_direction %}
+                    <span class="tag {% if gd == 'LONG' %}long{% elif gd == 'SHORT' %}short{% elif gd == 'SKIP' %}skip{% else %}wait{% endif %}">
+                        {{ gd }}
+                    </span>
+                </td>
+
+                <td>
+                    {% set jd = row.jarvis_direction %}
+                    <span class="tag {% if jd == 'LONG' %}long{% elif jd == 'SHORT' %}short{% elif jd == 'SKIP' %}skip{% else %}wait{% endif %}">
+                        {{ jd }}
+                    </span>
+                    <div class="small">{{ row.jarvis_confidence }}%</div>
+                </td>
+
+                <td>
+                    {% set cr = row.comparison_result %}
+                    <span class="tag {% if cr == 'AGREE' %}agree{% elif cr == 'CONFLICT' %}conflict{% else %}wait{% endif %}">
+                        {{ cr }}
+                    </span>
+                </td>
+
+                <td>
+                    {% set mb = row.manual_trade_bias %}
+                    <span class="tag {% if mb == 'AGREE_HIGH' %}agree{% elif mb == 'CAUTION' %}conflict{% elif mb == 'WATCH' %}watch{% elif mb == 'NO_TRADE' %}skip{% else %}wait{% endif %}">
+                        {{ mb }}
+                    </span>
+                </td>
+
+                <td>
+                    {% set fd = row.final_direction %}
+                    <span class="tag {% if fd == 'LONG' %}long{% elif fd == 'SHORT' %}short{% elif fd == 'WATCH' %}watch{% elif fd == 'SKIP' %}skip{% else %}wait{% endif %}">
+                        {{ fd }}
+                    </span>
+                    <div class="small">{{ row.final_source }}</div>
+                </td>
+
+                <td>{{ row.gpt_start }} / {{ row.gpt_end }}</td>
+                <td>{{ row.jarvis_start }} / {{ row.jarvis_end }}</td>
+                <td class="note">{{ row.jarvis_reason }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

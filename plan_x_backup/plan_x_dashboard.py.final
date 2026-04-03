@@ -1,0 +1,23 @@
+# -*- coding: utf-8 -*-
+import os, json
+from flask import Flask, render_template
+
+BASE_DIR = "/home/ubuntu/jarvis-field/8501"
+DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")
+
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
+
+@app.route("/")
+def home():
+    data = {"updated_at": "-", "count": 0, "rows": []}
+    try:
+        if os.path.exists(DASHBOARD_JSON):
+            with open(DASHBOARD_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+    except:
+        pass
+
+    return render_template("plan_x_index.html", data=data)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8501)

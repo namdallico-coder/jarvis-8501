@@ -1,0 +1,152 @@
+<!-- /home/ubuntu/new_system/templates/index.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>PLENX Dashboard</title>
+    <meta http-equiv="refresh" content="30">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #0f172a;
+            color: #e5e7eb;
+        }
+        h1 {
+            margin-bottom: 8px;
+        }
+        .meta {
+            margin-bottom: 16px;
+            color: #cbd5e1;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: #111827;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #334155;
+            padding: 8px 10px;
+            text-align: center;
+        }
+        th {
+            background: #1e293b;
+            color: #f8fafc;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background: #0b1220;
+        }
+        .status-long-entry { color: #22c55e; font-weight: bold; }
+        .status-short-entry { color: #ef4444; font-weight: bold; }
+        .status-ready { color: #fde68a; font-weight: bold; }
+        .status-wait { color: #9ca3af; }
+        .status-skip { color: #f87171; font-weight: bold; }
+
+        .decision-strong { color: #60a5fa; font-weight: bold; }
+        .decision-watch { color: #facc15; font-weight: bold; }
+        .decision-skip { color: #ef4444; font-weight: bold; }
+        .decision-wait { color: #9ca3af; }
+
+        .amt-high { color: #22c55e; font-weight: bold; }
+        .amt-mid { color: #facc15; font-weight: bold; }
+        .amt-low { color: #9ca3af; }
+
+        .num-good { color: #22c55e; font-weight: bold; }
+        .num-mid { color: #facc15; font-weight: bold; }
+        .num-bad { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>PLENX 웹 대시보드 기반 판단 시스템</h1>
+    <div class="meta">
+        업데이트: {{ updated_at }} /
+        페어 수: {{ count }}
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Pair</th>
+                <th>Tier</th>
+                <th>X-score</th>
+                <th>Long Entry</th>
+                <th>Long Exit</th>
+                <th>Short Entry</th>
+                <th>Short Exit</th>
+                <th>Status</th>
+                <th>Quality</th>
+                <th>판단</th>
+                <th>추천투자금</th>
+                <th>승률</th>
+                <th>ROI</th>
+                <th>SAFE</th>
+                <th>Last Side</th>
+                <th>Last Signal At</th>
+                <th>Updated At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.pair }}</td>
+                <td>{{ row.tier }}</td>
+                <td>{{ row.x_score }}</td>
+                <td>{{ row.long_entry }}</td>
+                <td>{{ row.long_exit }}</td>
+                <td>{{ row.short_entry }}</td>
+                <td>{{ row.short_exit }}</td>
+
+                <td class="
+                    {% if row.status == 'LONG_ENTRY' %}status-long-entry
+                    {% elif row.status == 'SHORT_ENTRY' %}status-short-entry
+                    {% elif row.status in ['LONG_READY', 'SHORT_READY'] %}status-ready
+                    {% elif row.status == 'SKIP' %}status-skip
+                    {% else %}status-wait
+                    {% endif %}
+                ">
+                    {{ row.status }}
+                </td>
+
+                <td class="
+                    {% if row.quality >= 80 %}num-good
+                    {% elif row.quality >= 60 %}num-mid
+                    {% else %}num-bad
+                    {% endif %}
+                ">
+                    {{ row.quality }}
+                </td>
+
+                <td class="
+                    {% if row.decision == '진입강력' %}decision-strong
+                    {% elif row.decision == '주의관찰' %}decision-watch
+                    {% elif row.decision == '제외' %}decision-skip
+                    {% else %}decision-wait
+                    {% endif %}
+                ">
+                    {{ row.decision }}
+                </td>
+
+                <td class="
+                    {% if row.recommended_amount == '높음' %}amt-high
+                    {% elif row.recommended_amount == '중간' %}amt-mid
+                    {% else %}amt-low
+                    {% endif %}
+                ">
+                    {{ row.recommended_amount }}
+                </td>
+
+                <td>{{ row.winrate }}%</td>
+                <td>{{ row.roi }}%</td>
+                <td>{{ row.safe }}</td>
+                <td>{{ row.last_signal_side }}</td>
+                <td>{{ row.last_signal_at }}</td>
+                <td>{{ row.updated_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

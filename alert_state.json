@@ -1,0 +1,194 @@
+{
+  "DOT/CHZ": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "THETA/GALA": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "EGLD/AXS": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "FIL/ENJ": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "NEO/GRT": {
+    "comparison_result": "WEAK_GPT_ONLY",
+    "manual_trade_bias": "WATCH",
+    "final_direction": "WATCH",
+    "gpt_direction": "LONG",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "SAND/VET": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "YGG/WOO": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "POL/ATOM": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "NEAR/AVAX": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "ZIL/ZRX": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "OP/ICP": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "WLD/FET": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "FLOW/IMX": {
+    "comparison_result": "WEAK_GPT_ONLY",
+    "manual_trade_bias": "WATCH",
+    "final_direction": "WATCH",
+    "gpt_direction": "LONG",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "ETC/UNI": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "INJ/ARB": {
+    "comparison_result": "WEAK_GPT_ONLY",
+    "manual_trade_bias": "WATCH",
+    "final_direction": "WATCH",
+    "gpt_direction": "LONG",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "DYDX/SNX": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "STX/PYTH": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "ASTR/ANKR": {
+    "comparison_result": "WEAK_GPT_ONLY",
+    "manual_trade_bias": "WATCH",
+    "final_direction": "WATCH",
+    "gpt_direction": "LONG",
+    "jarvis_direction": "SKIP",
+    "jarvis_confidence": 35
+  },
+  "APT/STRK": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "RUNE/GMT": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "ID/MINA": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "WAIT",
+    "gpt_direction": "WAIT",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "ORDI/AR": {
+    "comparison_result": "WEAK_GPT_ONLY",
+    "manual_trade_bias": "WATCH",
+    "final_direction": "WATCH",
+    "gpt_direction": "SHORT",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "MANA/RENDER": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  },
+  "HOT/ROSE": {
+    "comparison_result": "NO_TRADE",
+    "manual_trade_bias": "NO_TRADE",
+    "final_direction": "SKIP",
+    "gpt_direction": "SKIP",
+    "jarvis_direction": "WAIT",
+    "jarvis_confidence": 45
+  }
+}
