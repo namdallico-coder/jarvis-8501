@@ -98,6 +98,30 @@
             color: #94a3b8;
             font-size: 12px;
         }
+        .system-box {
+            background: #111827;
+            border: 1px solid #334155;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+        .update-btn {
+            padding: 10px 16px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+        .ok {
+            color: #22c55e;
+            font-weight: bold;
+        }
+        .err {
+            color: #ef4444;
+            font-weight: bold;
+        }
         @media (max-width: 1200px) {
             .grid { grid-template-columns: repeat(2, 1fr); }
         }
@@ -114,6 +138,51 @@
         마지막 업데이트: {{ data.updated_at }} |
         페어 수: {{ data.count }} |
         ENTRY 신호: {{ data.entry_signals }}
+    </div>
+
+    <div class="section-title">⚙️ 시스템</div>
+    <div class="system-box">
+        <form action="/update" method="post">
+            <button class="update-btn" type="submit">🚀 8501 업데이트 실행</button>
+        </form>
+
+        <div style="margin-top:12px;">
+            <b>API 상태:</b>
+            {% if api_health.status == 'ok' %}
+                <span class="ok">정상</span>
+            {% else %}
+                <span class="err">오류</span>
+            {% endif %}
+        </div>
+
+        {% if update_result %}
+        <div style="margin-top:12px;">
+            <b>최근 업데이트:</b>
+            {% if update_result.status == 'SUCCESS' %}
+                <span class="ok">SUCCESS</span>
+            {% else %}
+                <span class="err">ERROR</span>
+            {% endif %}
+        </div>
+
+        {% if update_result.time %}
+        <div class="small" style="margin-top:6px;">
+            시간: {{ update_result.time }}
+        </div>
+        {% endif %}
+
+        {% if update_result.output %}
+        <div class="small" style="margin-top:6px; white-space: pre-line;">
+            {{ update_result.output }}
+        </div>
+        {% endif %}
+
+        {% if update_result.error %}
+        <div class="small" style="margin-top:6px; white-space: pre-line;">
+            {{ update_result.error }}
+        </div>
+        {% endif %}
+        {% endif %}
     </div>
 
     <div class="grid">

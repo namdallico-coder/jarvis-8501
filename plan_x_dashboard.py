@@ -3,10 +3,14 @@
 
 import os
 import json
-from flask import Flask, render_template
+import requests
+from flask import Flask, render_template, redirect, url_for
 
 BASE_DIR = "/home/ubuntu/jarvis-field/8501"
 DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")
+UPDATE_RESULT_FILE = os.path.join(BASE_DIR, "update_result.json")
+API_HEALTH_URL = "http://127.0.0.1:8505/health"
+API_UPDATE_URL = "http://127.0.0.1:8505/update"
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
@@ -47,7 +51,6 @@ def load_dashboard():
                 "no_trade": len([r for r in rows if r.get("manual_trade_bias") == "NO_TRADE"]),
             }
 
-            # 중요 신호 우선 정렬
             def row_rank(r):
                 final_dir = str(r.get("final_direction", ""))
                 bias = str(r.get("manual_trade_bias", ""))
@@ -81,10 +84,47 @@ def load_dashboard():
     return data
 
 
+def load_update_result():
+    if not os.path.exists(UPDATE_RESULT_FILE):
+        return None
+
+    try:
+        with open(UPDATE_RESULT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        return {"status": "ERROR", "error": str(e)}
+
+
+def get_api_health():
+    try:
+        res = requests.get(API_HEALTH_URL, timeout=5)
+        return res.json()
+    except Exception as e:
+        return {"status": "ERROR", "error": str(e)}
+
+
 @app.route("/")
 def home():
     data = load_dashboard()
-    return render_template("plan_x_index.html", data=data)
+    api_health = get_api_health()
+    update_result = load_update_result()
+
+    return render_template(
+        "plan_x_index.html",
+        data=data,
+        api_health=api_health,
+        update_result=update_result
+    )
+
+
+@app.route("/update", methods=["POST"])
+def update():
+    try:
+        requests.get(API_UPDATE_URL, timeout=20)
+    except Exception as e:
+        print(f"Update API Call Error: {e}")
+
+    return redirect(url_for("home"))
 
 
 if __name__ == "__main__":
