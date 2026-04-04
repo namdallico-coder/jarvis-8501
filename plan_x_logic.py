@@ -332,7 +332,7 @@ class JarvisPlenX:
         start_x = self._clamp(self._round_x(x_score - 5), 5, 30)
         end_x = self._clamp(self._round_x(x_score + 10), 18, 45)
 
-        if left_score >= 3 and pressure < 1.0:
+        if left_score >= 2 and pressure < 1.10:
             end_x = self._clamp(end_x + 3, 18, 45)
 
         if start_x >= end_x:
@@ -344,7 +344,7 @@ class JarvisPlenX:
         start_x = self._clamp(self._round_x(x_score - 10), 55, 82)
         end_x = self._clamp(self._round_x(x_score + 5), 70, 95)
 
-        if right_score >= 3 and pressure > 1.0:
+        if right_score >= 2 and pressure > 0.90:
             start_x = self._clamp(start_x - 3, 55, 82)
 
         if start_x >= end_x:
@@ -371,7 +371,7 @@ class JarvisPlenX:
         left_score, right_score = self.score_direction(market)
         reason = self.build_reason(market, left_score, right_score)
 
-        if left["volatility_5m"] > 0.03 or right["volatility_5m"] > 0.03:
+        if left["volatility_5m"] > 0.05 or right["volatility_5m"] > 0.05:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"단기 변동성 과도 | {reason}",
@@ -379,8 +379,8 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        if actual_x_score <= 35 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
-            if left_score >= 3 and left["pressure"] < 1.0 and left["trend_5m"] >= -0.5:
+        if actual_x_score <= 42 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
+            if left_score >= 2 and left["pressure"] < 1.10 and left["trend_5m"] >= -1.5:
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
                 return {
                     "jarvis_status": "LONG",
@@ -389,8 +389,8 @@ class JarvisPlenX:
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score >= 65 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
-            if right_score >= 3 and left["pressure"] > 1.0 and left["trend_5m"] <= 0.5:
+        if actual_x_score >= 58 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
+            if right_score >= 2 and left["pressure"] > 0.90 and left["trend_5m"] <= 1.5:
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
                 return {
                     "jarvis_status": "SHORT",
@@ -399,7 +399,7 @@ class JarvisPlenX:
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score <= 35:
+        if actual_x_score <= 42:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"LONG 후보지만 보수적 대기 | {reason}",
@@ -407,7 +407,7 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        if actual_x_score >= 65:
+        if actual_x_score >= 58:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"SHORT 후보지만 보수적 대기 | {reason}",
