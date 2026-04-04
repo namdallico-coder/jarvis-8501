@@ -13,7 +13,7 @@
             font-family: Arial, sans-serif;
         }
         .wrap {
-            max-width: 1800px;
+            max-width: 1880px;
             margin: 0 auto;
             padding: 24px;
         }
@@ -52,6 +52,12 @@
             cursor: pointer;
             margin-right: 8px;
             margin-bottom: 8px;
+        }
+        .btn-danger {
+            background: #b91c1c;
+        }
+        .btn-dark {
+            background: #475569;
         }
         .search-box {
             padding: 10px 12px;
@@ -150,7 +156,13 @@
             font-weight: bold;
             color: #e2e8f0;
         }
-        @media (max-width: 1100px) {
+        .backup-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 1200px) {
             .top-row {
                 grid-template-columns: 1fr;
             }
@@ -276,27 +288,92 @@
                     </tr>
                 </tbody>
             </table>
-
-            <div class="small" style="margin-top:10px;">
-                각 업그레이드의 마지막 성공/실패 이력 기준 표시
-            </div>
         </div>
 
         <div class="card">
-            <div class="section-title" style="margin-top:0;">🔎 코인 검색</div>
-            <form action="/" method="get">
-                <input
-                    class="search-box"
-                    type="text"
-                    name="q"
-                    placeholder="예: BTC, ETH, SOL"
-                    value="{{ search_query }}"
-                />
-                <button class="btn" type="submit">검색</button>
+            <div class="section-title" style="margin-top:0;">🗂 백업 / 롤백</div>
+
+            <form action="/create_backup" method="post" style="display:inline;">
+                <button class="btn" type="submit">지금 백업 생성</button>
             </form>
-            <div class="small" style="margin-top:10px;">
-                페어명 기준 부분 검색 가능
+
+            <div class="meta-line">
+                <b>최근 백업:</b>
+                {{ backup_state.last_backup.filename or '-' }} |
+                {{ backup_state.last_backup.time or '-' }} |
+                {% if backup_state.last_backup.status == 'SUCCESS' %}
+                    <span class="ok">성공</span>
+                {% elif backup_state.last_backup.status == 'ERROR' %}
+                    <span class="err">실패</span>
+                {% else %}
+                    <span class="warn">기록없음</span>
+                {% endif %}
             </div>
+
+            <div class="meta-line">
+                <b>최근 롤백:</b>
+                {{ backup_state.last_restore.filename or '-' }} |
+                {{ backup_state.last_restore.time or '-' }} |
+                {% if backup_state.last_restore.status == 'SUCCESS' %}
+                    <span class="ok">성공</span>
+                {% elif backup_state.last_restore.status == 'ERROR' %}
+                    <span class="err">실패</span>
+                {% else %}
+                    <span class="warn">기록없음</span>
+                {% endif %}
+            </div>
+
+            <table class="upgrade-table" style="margin-top:14px;">
+                <thead>
+                    <tr>
+                        <th>백업 파일명</th>
+                        <th>백업 날짜</th>
+                        <th>크기(bytes)</th>
+                        <th>다운로드</th>
+                        <th>롤백</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in backup_items %}
+                    <tr>
+                        <td class="upgrade-name">{{ item.filename }}</td>
+                        <td>{{ item.mtime }}</td>
+                        <td>{{ item.size }}</td>
+                        <td>
+                            <a class="btn btn-dark" href="/download_backup/{{ item.filename }}">다운로드</a>
+                        </td>
+                        <td>
+                            <form action="/restore_backup" method="post" onsubmit="return confirm('정말 이 백업으로 롤백하시겠습니까?');">
+                                <input type="hidden" name="filename" value="{{ item.filename }}">
+                                <button class="btn btn-danger" type="submit">롤백</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not backup_items %}
+                    <tr>
+                        <td colspan="5"><span class="warn">백업 파일 없음</span></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title" style="margin-top:0;">🔎 코인 검색</div>
+        <form action="/" method="get">
+            <input
+                class="search-box"
+                type="text"
+                name="q"
+                placeholder="예: BTC, ETH, SOL"
+                value="{{ search_query }}"
+            />
+            <button class="btn" type="submit">검색</button>
+        </form>
+        <div class="small" style="margin-top:10px;">
+            페어명 기준 부분 검색 가능
         </div>
     </div>
 
