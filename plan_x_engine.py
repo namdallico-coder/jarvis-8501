@@ -343,20 +343,24 @@ def choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end):
 def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_start, jarvis_end, comparison, x_score, slope_5):
     result = comparison["comparison_result"]
 
-    if result == "AGREE" and gpt_direction in ["LONG", "SHORT"] and moving_toward_center(x_score, slope_5):
+    if result == "AGREE" and gpt_direction in ["LONG", "SHORT"]:
         final_start, final_end = choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end)
         return gpt_direction, "GPT+JARVIS", final_start, final_end
 
     if result == "WEAK_GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
+        if gpt_direction == "LONG" and x_score <= 35:
+            return gpt_direction, "GPT_EXTREME", gpt_start, gpt_end
+        if gpt_direction == "SHORT" and x_score >= 65:
+            return gpt_direction, "GPT_EXTREME", gpt_start, gpt_end
         return "WATCH", "GPT_ONLY", gpt_start, gpt_end
 
     if result == "WEAK_JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
         return "WATCH", "JARVIS_ONLY", jarvis_start, jarvis_end
 
     if result == "CONFLICT":
-        return "WAIT", "SYSTEM", "-", "-"
+        return "WATCH", "SYSTEM", "-", "-"
 
-    return "WAIT", "SYSTEM", "-", "-"
+    return "WATCH", "SYSTEM", "-", "-"
 
 
 def build_row(item, history):
@@ -740,22 +744,45 @@ def detect_entry_change(rows):
 
     for r in rows:
         pair = r["pair"]
-        current = str(r.get("status", "")).strip().upper()
-        prev_status = str(prev.get(pair, "")).strip().upper()
+        final_direction = str(r.get("final_direction", "")).strip().upper()
+        final_source = str(r.get("final_source", "")).strip().upper()
+        x_score = float(r.get("x_score", 50))
 
-        if prev_status in ["WAIT", "SKIP"] and current in ["LONG_ENTRY", "SHORT_ENTRY"]:
-            alerts.append(
-                f"🚨 ENTRY 전환 발생\n"
-                f"{pair}\n"
-                f"{prev_status} → {current}\n"
-                f"플렌X={r.get('x_score', '-')}\n"
-                f"GPT={r.get('gpt_start', '-')}/{r.get('gpt_end', '-')}\n"
-                f"JARVIS={r.get('jarvis_start', '-')}/{r.get('jarvis_end', '-')}\n"
-                f"FINAL={r.get('final_direction', '-')}\n"
-                f"FINAL_X={r.get('final_start', '-')}/{r.get('final_end', '-')}"
-            )
+        prev_data = prev.get(pair, {})
+        if isinstance(prev_data, dict):
+            prev_final_direction = str(prev_data.get("final_direction", "")).strip().upper()
+            prev_final_source = str(prev_data.get("final_source", "")).strip().upper()
+        else:
+            prev_final_direction = ""
+            prev_final_source = ""
 
-    new_state = {r["pair"]: r["status"] for r in rows}
+        is_current_entry = final_direction in ["LONG", "SHORT"] and final_source in ["GPT+JARVIS", "GPT_EXTREME"]
+        was_prev_entry = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in ["GPT+JARVIS", "GPT_EXTREME"]
+
+        extreme_ok = (
+            (final_direction == "LONG" and x_score <= 35) or
+            (final_direction == "SHORT" and x_score >= 65)
+        )
+
+        if is_current_entry and not was_prev_entry:
+            if final_source == "GPT+JARVIS" or (final_source == "GPT_EXTREME" and extreme_ok):
+                alerts.append(
+                    f"🚨 ENTRY 전환 발생\n"
+                    f"{pair}\n"
+                    f"FINAL={final_direction} ({final_source})\n"
+                    f"플렌X={r.get('x_score', '-')}\n"
+                    f"GPT={r.get('gpt_start', '-')}/{r.get('gpt_end', '-')}\n"
+                    f"JARVIS={r.get('jarvis_start', '-')}/{r.get('jarvis_end', '-')}\n"
+                    f"FINAL_X={r.get('final_start', '-')}/{r.get('final_end', '-')}"
+                )
+
+    new_state = {
+        r["pair"]: {
+            "final_direction": str(r.get("final_direction", "")).strip().upper(),
+            "final_source": str(r.get("final_source", "")).strip().upper()
+        }
+        for r in rows
+    }
     write_json(LAST_STATUS_FILE, new_state)
     return alerts
 
