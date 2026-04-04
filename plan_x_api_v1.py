@@ -81,6 +81,16 @@ def write_update_result(data):
         pass
 
 
+def get_git_version(ref="HEAD"):
+    result = run_cmd(["git", "rev-parse", "--short", ref])
+    return result["stdout"] if result["ok"] else "UNKNOWN"
+
+
+def get_last_update_time():
+    result = run_cmd(["git", "log", "-1", "--format=%cd", "--date=iso"])
+    return result["stdout"] if result["ok"] else "UNKNOWN"
+
+
 def schedule_restart(service_name):
     try:
         subprocess.Popen(
@@ -106,107 +116,79 @@ def schedule_restart(service_name):
         }
 
 
-def get_git_version(ref="HEAD"):
-    result = run_cmd(["git", "rev-parse", "--short", ref])
-    return result["stdout"] if result["ok"] else "UNKNOWN"
-
-
-def get_last_update_time():
-    result = run_cmd(["git", "log", "-1", "--format=%cd", "--date=iso"])
-    return result["stdout"] if result["ok"] else "UNKNOWN"
-
-
 def fetch_origin_main():
     return run_cmd(["git", "fetch", "origin", "main"], timeout=120)
 
 
-def full_update():
-    before = get_git_version("HEAD")
-    origin_version = get_git_version("origin/main")
-
-    fetch_result = fetch_origin_main()
-    if not fetch_result["ok"]:
-        return {
-            "mode": "all",
-            "status": "ERROR",
-            "before": before,
-            "target": origin_version,
-            "output": fetch_result["stdout"],
-            "error": fetch_result["stderr"] or "git fetch failed",
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-    pull_result = run_cmd(["git", "pull", "origin", "main"], timeout=120)
-    after = get_git_version("HEAD")
-
-    if pull_result["ok"]:
-        return {
-            "mode": "all",
-            "status": "SUCCESS",
-            "before": before,
-            "after": after,
-            "target": origin_version,
-            "output": pull_result["stdout"] or "Already up to date.",
-            "error": pull_result["stderr"],
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-
+def build_base_update_result(mode):
     return {
-        "mode": "all",
+        "mode": mode,
         "status": "ERROR",
-        "before": before,
-        "after": after,
-        "target": origin_version,
-        "output": pull_result["stdout"],
-        "error": pull_result["stderr"] or "git pull failed",
+        "before": get_git_version("HEAD"),
+        "after": get_git_version("HEAD"),
+        "target": get_git_version("origin/main"),
+        "updated_files": [],
+        "output": "",
+        "error": "",
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 
-def partial_update(target_name):
-    files = FILE_GROUPS.get(target_name, [])
-    head_before = get_git_version("HEAD")
-    origin_version = get_git_version("origin/main")
+def full_update():
+    result = build_base_update_result("all")
+    result["updated_files"] = ["ALL"]
 
     fetch_result = fetch_origin_main()
+    result["target"] = get_git_version("origin/main")
+
     if not fetch_result["ok"]:
-        return {
-            "mode": target_name,
-            "status": "ERROR",
-            "before": head_before,
-            "target": origin_version,
-            "updated_files": [],
-            "output": fetch_result["stdout"],
-            "error": fetch_result["stderr"] or "git fetch failed",
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
+        result["error"] = fetch_result["stderr"] or "git fetch failed"
+        result["output"] = fetch_result["stdout"]
+        return result
+
+    pull_result = run_cmd(["git", "pull", "origin", "main"], timeout=120)
+    result["after"] = get_git_version("HEAD")
+    result["output"] = pull_result["stdout"] or "Already up to date."
+    result["error"] = pull_result["stderr"]
+
+    if pull_result["ok"]:
+        result["status"] = "SUCCESS"
+    else:
+        result["status"] = "ERROR"
+        if not result["error"]:
+            result["error"] = "git pull failed"
+
+    return result
+
+
+def partial_update(target_name):
+    result = build_base_update_result(target_name)
+    files = FILE_GROUPS.get(target_name, [])
+    result["updated_files"] = files
+
+    fetch_result = fetch_origin_main()
+    result["target"] = get_git_version("origin/main")
+
+    if not fetch_result["ok"]:
+        result["error"] = fetch_result["stderr"] or "git fetch failed"
+        result["output"] = fetch_result["stdout"]
+        return result
 
     checkout_cmd = ["git", "checkout", "origin/main", "--"] + files
     checkout_result = run_cmd(checkout_cmd, timeout=120)
 
-    if not checkout_result["ok"]:
-        return {
-            "mode": target_name,
-            "status": "ERROR",
-            "before": head_before,
-            "target": origin_version,
-            "updated_files": files,
-            "output": checkout_result["stdout"],
-            "error": checkout_result["stderr"] or "partial checkout failed",
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
+    result["after"] = get_git_version("HEAD")
+    result["output"] = checkout_result["stdout"] or "Selected files updated from origin/main"
+    result["error"] = checkout_result["stderr"]
 
-    return {
-        "mode": target_name,
-        "status": "SUCCESS",
-        "before": head_before,
-        "after": head_before,
-        "target": origin_version,
-        "updated_files": files,
-        "output": "Selected files updated from origin/main",
-        "error": "",
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
+    if checkout_result["ok"]:
+        result["status"] = "SUCCESS"
+    else:
+        result["status"] = "ERROR"
+        if not result["error"]:
+            result["error"] = "partial checkout failed"
+
+    return result
 
 
 def build_restart_result(target_name, update_status):
@@ -222,13 +204,7 @@ def build_restart_result(target_name, update_status):
             "web_restart": schedule_restart(WEB_SERVICE)
         }
 
-    if target_name == "gpt":
-        return {
-            "engine_restart": schedule_restart(ENGINE_SERVICE),
-            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
-        }
-
-    if target_name == "jarvis":
+    if target_name in ["gpt", "jarvis"]:
         return {
             "engine_restart": schedule_restart(ENGINE_SERVICE),
             "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
@@ -255,6 +231,7 @@ def finalize_result(target_name, update_result):
             "service": API_SERVICE,
             "status": "RUNNING",
             "version": get_git_version("HEAD"),
+            "origin_main": get_git_version("origin/main"),
             "last_update": get_last_update_time()
         },
         "engine_restart": restart_result["engine_restart"],
@@ -266,15 +243,17 @@ def finalize_result(target_name, update_result):
     if update_result["status"] == "SUCCESS":
         send_telegram(
             f"✅ {target_name.upper()} 업데이트 완료\n"
+            f"time={update_result.get('time', '-')}\n"
             f"before={update_result.get('before', '-')}\n"
-            f"target={update_result.get('target', '-')}\n"
             f"after={update_result.get('after', '-')}\n"
-            f"{update_result.get('output', '')}"
+            f"target={update_result.get('target', '-')}\n"
+            f"files={update_result.get('updated_files', [])}"
         )
     else:
         send_telegram(
             f"❌ {target_name.upper()} 업데이트 실패\n"
-            f"{update_result.get('error', '')}"
+            f"time={update_result.get('time', '-')}\n"
+            f"error={update_result.get('error', '-')}"
         )
 
     return final_result
@@ -293,23 +272,19 @@ def health():
 
 @app.get("/update")
 def update_all():
-    update_result = full_update()
-    return finalize_result("all", update_result)
+    return finalize_result("all", full_update())
 
 
 @app.get("/update_gpt")
 def update_gpt():
-    update_result = partial_update("gpt")
-    return finalize_result("gpt", update_result)
+    return finalize_result("gpt", partial_update("gpt"))
 
 
 @app.get("/update_jarvis")
 def update_jarvis():
-    update_result = partial_update("jarvis")
-    return finalize_result("jarvis", update_result)
+    return finalize_result("jarvis", partial_update("jarvis"))
 
 
 @app.get("/update_web")
 def update_web():
-    update_result = partial_update("web")
-    return finalize_result("web", update_result)
+    return finalize_result("web", partial_update("web"))

@@ -185,71 +185,86 @@
                 {% endif %}
             </div>
 
-            <div class="meta-line"><b>현재 버전:</b> {{ current_version }}</div>
+            <div class="meta-line">
+                <b>현재 버전:</b> {{ current_version or '-' }}
+            </div>
 
-            {% if update_result and update_result.update %}
             <div class="block">
-                <div class="meta-line">
-                    <b>최근 업데이트 상태:</b>
-                    {% if update_result.update.status == 'SUCCESS' %}
-                        <span class="ok">SUCCESS</span>
-                    {% else %}
-                        <span class="err">ERROR</span>
-                    {% endif %}
-                </div>
+                {% if update_result and update_result.update %}
+                    <div class="meta-line">
+                        <b>최근 업데이트 상태:</b>
+                        {% if update_result.update.status == 'SUCCESS' %}
+                            <span class="ok">SUCCESS</span>
+                        {% else %}
+                            <span class="err">ERROR</span>
+                        {% endif %}
+                    </div>
 
-                <div class="meta-line"><b>업데이트 종류:</b> {{ update_result.update.mode }}</div>
-                <div class="meta-line"><b>업데이트 시간:</b> {{ update_result.update.time }}</div>
-                <div class="meta-line"><b>버전:</b> {{ update_result.update.before }} → {{ update_result.update.after }}</div>
-                <div class="meta-line"><b>대상 버전:</b> {{ update_result.update.target }}</div>
+                    <div class="meta-line">
+                        <b>업데이트 종류:</b> {{ update_result.update.mode or '-' }}
+                    </div>
 
-                {% if update_result.update.updated_files %}
-                <div class="meta-line"><b>반영 파일:</b> {{ update_result.update.updated_files }}</div>
-                {% endif %}
+                    <div class="meta-line">
+                        <b>업데이트 시간:</b> {{ update_result.update.time or '-' }}
+                    </div>
 
-                {% if update_result.update.output %}
-                <div class="small" style="white-space: pre-line; margin-top:8px;">
-                    <b>출력:</b><br>{{ update_result.update.output }}
-                </div>
-                {% endif %}
+                    <div class="meta-line">
+                        <b>이전 버전:</b> {{ update_result.update.before or '-' }}
+                    </div>
 
-                {% if update_result.update.error %}
-                <div class="small" style="white-space: pre-line; margin-top:8px;">
-                    <b>에러:</b><br>{{ update_result.update.error }}
-                </div>
-                {% endif %}
+                    <div class="meta-line">
+                        <b>현재 버전:</b> {{ update_result.update.after or '-' }}
+                    </div>
 
-                {% if update_result.engine_restart %}
-                <div class="meta-line">
-                    <b>엔진 재시작:</b>
-                    {% if update_result.engine_restart.status == 'SCHEDULED' %}
-                        <span class="ok">{{ update_result.engine_restart.status }}</span>
-                    {% elif update_result.engine_restart.status == 'SKIPPED' %}
-                        <span class="warn">{{ update_result.engine_restart.status }}</span>
-                    {% else %}
-                        <span class="err">{{ update_result.engine_restart.status }}</span>
-                    {% endif %}
-                </div>
-                {% endif %}
+                    <div class="meta-line">
+                        <b>대상 버전:</b> {{ update_result.update.target or '-' }}
+                    </div>
 
-                {% if update_result.web_restart %}
-                <div class="meta-line">
-                    <b>웹 재시작:</b>
-                    {% if update_result.web_restart.status == 'SCHEDULED' %}
-                        <span class="ok">{{ update_result.web_restart.status }}</span>
-                    {% elif update_result.web_restart.status == 'SKIPPED' %}
-                        <span class="warn">{{ update_result.web_restart.status }}</span>
-                    {% else %}
-                        <span class="err">{{ update_result.web_restart.status }}</span>
-                    {% endif %}
-                </div>
+                    <div class="meta-line">
+                        <b>반영 파일:</b> {{ update_result.update.updated_files or '-' }}
+                    </div>
+
+                    <div class="meta-line">
+                        <b>엔진 재시작:</b>
+                        {% if update_result.engine_restart %}
+                            {% if update_result.engine_restart.status == 'SCHEDULED' %}
+                                <span class="ok">{{ update_result.engine_restart.status }}</span>
+                            {% elif update_result.engine_restart.status == 'SKIPPED' %}
+                                <span class="warn">{{ update_result.engine_restart.status }}</span>
+                            {% else %}
+                                <span class="err">{{ update_result.engine_restart.status }}</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+
+                    <div class="meta-line">
+                        <b>웹 재시작:</b>
+                        {% if update_result.web_restart %}
+                            {% if update_result.web_restart.status == 'SCHEDULED' %}
+                                <span class="ok">{{ update_result.web_restart.status }}</span>
+                            {% elif update_result.web_restart.status == 'SKIPPED' %}
+                                <span class="warn">{{ update_result.web_restart.status }}</span>
+                            {% else %}
+                                <span class="err">{{ update_result.web_restart.status }}</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+
+                    <div class="small" style="white-space: pre-line; margin-top:8px;">
+                        <b>출력:</b><br>{{ update_result.update.output or '-' }}
+                    </div>
+
+                    <div class="small" style="white-space: pre-line; margin-top:8px;">
+                        <b>에러:</b><br>{{ update_result.update.error or '-' }}
+                    </div>
+                {% else %}
+                    <div class="meta-line"><span class="warn">업데이트 기록 없음</span></div>
                 {% endif %}
             </div>
-            {% else %}
-            <div class="block">
-                <div class="meta-line"><span class="warn">업데이트 기록 없음</span></div>
-            </div>
-            {% endif %}
         </div>
 
         <div class="card">
@@ -301,7 +316,9 @@
                     </span>
                 </td>
 
-                <td><div class="value-box">{{ row.gpt_start }} / {{ row.gpt_end }}</div></td>
+                <td>
+                    <div class="value-box">{{ row.gpt_start }} / {{ row.gpt_end }}</div>
+                </td>
 
                 <td>
                     {% set jd = row.jarvis_direction %}
@@ -311,7 +328,9 @@
                     <div class="small">{{ row.jarvis_confidence }}%</div>
                 </td>
 
-                <td><div class="value-box">{{ row.jarvis_start }} / {{ row.jarvis_end }}</div></td>
+                <td>
+                    <div class="value-box">{{ row.jarvis_start }} / {{ row.jarvis_end }}</div>
+                </td>
 
                 <td>
                     {% set cr = row.comparison_result %}
@@ -328,7 +347,9 @@
                     <div class="small">{{ row.final_source }}</div>
                 </td>
 
-                <td><div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div></td>
+                <td>
+                    <div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div>
+                </td>
             </tr>
         {% endfor %}
         </tbody>
