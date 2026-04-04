@@ -63,10 +63,7 @@ def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": f"[JARVIS-8501]\n{msg}"
-            },
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": f"[JARVIS-8501]\n{msg}"},
             timeout=10
         )
     except Exception:
@@ -90,26 +87,14 @@ def get_last_update_time():
 def schedule_restart(service_name):
     try:
         subprocess.Popen(
-            [
-                "bash",
-                "-lc",
-                f"sleep 2 && sudo /usr/bin/systemctl restart {service_name}"
-            ],
+            ["bash", "-lc", f"sleep 2 && sudo /usr/bin/systemctl restart {service_name}"],
             cwd=BASE_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-        return {
-            "service": service_name,
-            "status": "SCHEDULED",
-            "error": ""
-        }
+        return {"service": service_name, "status": "SCHEDULED", "error": ""}
     except Exception as e:
-        return {
-            "service": service_name,
-            "status": "ERROR",
-            "error": str(e)
-        }
+        return {"service": service_name, "status": "ERROR", "error": str(e)}
 
 
 def fetch_origin_main():
@@ -127,28 +112,18 @@ def default_statuses():
 
 def read_update_result():
     if not os.path.exists(UPDATE_RESULT_FILE):
-        return {
-            "latest": {},
-            "statuses": default_statuses(),
-            "api": {}
-        }
+        return {"latest": {}, "statuses": default_statuses(), "api": {}}
 
     try:
         with open(UPDATE_RESULT_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-
         if "statuses" not in data:
             data["statuses"] = default_statuses()
         if "latest" not in data:
             data["latest"] = {}
-
         return data
     except Exception:
-        return {
-            "latest": {},
-            "statuses": default_statuses(),
-            "api": {}
-        }
+        return {"latest": {}, "statuses": default_statuses(), "api": {}}
 
 
 def write_update_result(latest_result):
@@ -156,7 +131,6 @@ def write_update_result(latest_result):
     mode = latest_result.get("mode", "unknown")
 
     data["latest"] = latest_result
-
     if mode in data["statuses"]:
         data["statuses"][mode] = {
             "time": latest_result.get("time", "-"),
@@ -179,18 +153,8 @@ def write_update_result(latest_result):
 def read_backup_result():
     if not os.path.exists(BACKUP_RESULT_FILE):
         return {
-            "last_backup": {
-                "status": "",
-                "filename": "-",
-                "time": "-",
-                "error": ""
-            },
-            "last_restore": {
-                "status": "",
-                "filename": "-",
-                "time": "-",
-                "error": ""
-            }
+            "last_backup": {"status": "", "filename": "-", "time": "-", "error": ""},
+            "last_restore": {"status": "", "filename": "-", "time": "-", "error": ""}
         }
 
     try:
@@ -198,18 +162,8 @@ def read_backup_result():
             return json.load(f)
     except Exception:
         return {
-            "last_backup": {
-                "status": "ERROR",
-                "filename": "-",
-                "time": "-",
-                "error": "backup_result.json read error"
-            },
-            "last_restore": {
-                "status": "ERROR",
-                "filename": "-",
-                "time": "-",
-                "error": "backup_result.json read error"
-            }
+            "last_backup": {"status": "ERROR", "filename": "-", "time": "-", "error": "backup_result read error"},
+            "last_restore": {"status": "ERROR", "filename": "-", "time": "-", "error": "backup_result read error"}
         }
 
 
@@ -240,7 +194,6 @@ def full_update():
 
     fetch_result = fetch_origin_main()
     result["target"] = get_git_version("origin/main")
-
     if not fetch_result["ok"]:
         result["error"] = fetch_result["stderr"] or "git fetch failed"
         result["output"] = fetch_result["stdout"]
@@ -255,9 +208,8 @@ def full_update():
         result["status"] = "SUCCESS"
         result["engine_restart"] = schedule_restart(ENGINE_SERVICE)
         result["web_restart"] = schedule_restart(WEB_SERVICE)
-    else:
-        if not result["error"]:
-            result["error"] = "git pull failed"
+    elif not result["error"]:
+        result["error"] = "git pull failed"
 
     return result
 
@@ -269,7 +221,6 @@ def partial_update(target_name):
 
     fetch_result = fetch_origin_main()
     result["target"] = get_git_version("origin/main")
-
     if not fetch_result["ok"]:
         result["error"] = fetch_result["stderr"] or "git fetch failed"
         result["output"] = fetch_result["stdout"]
@@ -284,15 +235,12 @@ def partial_update(target_name):
 
     if checkout_result["ok"]:
         result["status"] = "SUCCESS"
-
         if target_name in ["gpt", "jarvis"]:
             result["engine_restart"] = schedule_restart(ENGINE_SERVICE)
-
         if target_name == "web":
             result["web_restart"] = schedule_restart(WEB_SERVICE)
-    else:
-        if not result["error"]:
-            result["error"] = "partial checkout failed"
+    elif not result["error"]:
+        result["error"] = "partial checkout failed"
 
     return result
 
@@ -318,12 +266,10 @@ def finalize_update(result):
 
 def list_backups():
     ensure_backup_dir()
-
     files = []
     for name in os.listdir(BACKUP_DIR):
         if not name.endswith(".tar.gz"):
             continue
-
         full_path = os.path.join(BACKUP_DIR, name)
         try:
             stat = os.stat(full_path)
@@ -346,14 +292,9 @@ def create_backup():
     filename = f"jarvis_backup_{now_str}.tar.gz"
     full_path = os.path.join(BACKUP_DIR, filename)
 
-    cmd = [
-        "tar",
-        "-czf",
-        full_path,
-        "8501"
-    ]
-
+    cmd = ["tar", "-czf", full_path, "8501"]
     result = run_cmd(cmd, timeout=300, cwd=PROJECT_PARENT_DIR)
+
     backup_state = read_backup_result()
 
     if result["ok"]:
@@ -364,9 +305,7 @@ def create_backup():
             "error": ""
         }
         write_backup_result(backup_state)
-
         send_telegram(f"✅ 백업 생성 완료\n{filename}")
-
         return {
             "status": "SUCCESS",
             "filename": filename,
@@ -382,7 +321,6 @@ def create_backup():
         "error": result["stderr"] or "backup failed"
     }
     write_backup_result(backup_state)
-
     send_telegram(f"❌ 백업 생성 실패\n{filename}\n{backup_state['last_backup']['error']}")
 
     return {
@@ -399,7 +337,6 @@ def restore_backup(filename, mode="all"):
 
     safe_name = os.path.basename(filename)
     full_path = os.path.join(BACKUP_DIR, safe_name)
-
     backup_state = read_backup_result()
 
     if not os.path.exists(full_path):
@@ -410,16 +347,12 @@ def restore_backup(filename, mode="all"):
             "error": "backup file not found"
         }
         write_backup_result(backup_state)
-
         return {
             "status": "ERROR",
             "filename": safe_name,
             "time": backup_state["last_restore"]["time"],
             "output": "",
-            "error": "backup file not found",
-            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
-            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""},
-            "api_restart": {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
+            "error": "backup file not found"
         }
 
     temp_dir = f"/home/ubuntu/temp_restore_{datetime.now().strftime('%H%M%S')}"
@@ -434,44 +367,36 @@ def restore_backup(filename, mode="all"):
             "error": extract_result["stderr"] or "extract failed"
         }
         write_backup_result(backup_state)
-
         return {
             "status": "ERROR",
             "filename": safe_name,
             "time": backup_state["last_restore"]["time"],
             "output": extract_result["stdout"],
-            "error": backup_state["last_restore"]["error"],
-            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
-            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""},
-            "api_restart": {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
+            "error": backup_state["last_restore"]["error"]
         }
 
     base = f"{temp_dir}/8501"
 
-    engine_restart = {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""}
-    web_restart = {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
-    api_restart = {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
-
     try:
         if mode == "gpt":
             shutil.copy(f"{base}/plan_x_engine.py", f"{BASE_DIR}/plan_x_engine.py")
-            engine_restart = schedule_restart(ENGINE_SERVICE)
+            schedule_restart(ENGINE_SERVICE)
 
         elif mode == "jarvis":
             shutil.copy(f"{base}/plan_x_logic.py", f"{BASE_DIR}/plan_x_logic.py")
-            engine_restart = schedule_restart(ENGINE_SERVICE)
+            schedule_restart(ENGINE_SERVICE)
 
         elif mode == "web":
             shutil.copy(f"{base}/plan_x_dashboard.py", f"{BASE_DIR}/plan_x_dashboard.py")
             shutil.copy(f"{base}/templates/plan_x_index.html", f"{BASE_DIR}/templates/plan_x_index.html")
-            web_restart = schedule_restart(WEB_SERVICE)
+            schedule_restart(WEB_SERVICE)
 
         else:
             run_cmd(["cp", "-r", base + "/.", BASE_DIR], timeout=300)
-            engine_restart = schedule_restart(ENGINE_SERVICE)
-            web_restart = schedule_restart(WEB_SERVICE)
+            schedule_restart(ENGINE_SERVICE)
+            schedule_restart(WEB_SERVICE)
 
-        api_restart = schedule_restart(API_SERVICE)
+        schedule_restart(API_SERVICE)
 
     except Exception as e:
         backup_state["last_restore"] = {
@@ -481,16 +406,12 @@ def restore_backup(filename, mode="all"):
             "error": str(e)
         }
         write_backup_result(backup_state)
-
         return {
             "status": "ERROR",
             "filename": safe_name,
             "time": backup_state["last_restore"]["time"],
             "output": "",
-            "error": str(e),
-            "engine_restart": engine_restart,
-            "web_restart": web_restart,
-            "api_restart": api_restart
+            "error": str(e)
         }
 
     backup_state["last_restore"] = {
@@ -500,7 +421,6 @@ def restore_backup(filename, mode="all"):
         "error": ""
     }
     write_backup_result(backup_state)
-
     send_telegram(f"✅ 롤백 완료\n{safe_name}\nmode={mode}")
 
     return {
@@ -509,10 +429,7 @@ def restore_backup(filename, mode="all"):
         "mode": mode,
         "time": backup_state["last_restore"]["time"],
         "output": "restore complete",
-        "error": "",
-        "engine_restart": engine_restart,
-        "web_restart": web_restart,
-        "api_restart": api_restart
+        "error": ""
     }
 
 
