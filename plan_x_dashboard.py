@@ -3,11 +3,13 @@
 
 import os
 import json
+from datetime import datetime
+
 import requests
 from flask import Flask, render_template, redirect, url_for, request, send_from_directory
 
 BASE_DIR = "/home/ubuntu/jarvis-field/8501"
-BACKUP_DIR = "/home/ubuntu/backups"
+BACKUP_DIR = "/home/ubuntu/jarvis-field/8501/backups"
 
 DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")
 UPDATE_RESULT_FILE = os.path.join(BASE_DIR, "update_result.json")
@@ -18,9 +20,8 @@ API_UPDATE_ALL_URL = "http://127.0.0.1:8505/update"
 API_UPDATE_GPT_URL = "http://127.0.0.1:8505/update_gpt"
 API_UPDATE_JARVIS_URL = "http://127.0.0.1:8505/update_jarvis"
 API_UPDATE_WEB_URL = "http://127.0.0.1:8505/update_web"
-API_BACKUPS_URL = "http://127.0.0.1:8505/backups"
-API_CREATE_BACKUP_URL = "http://127.0.0.1:8505/create_backup"
 API_RESTORE_BACKUP_URL = "http://127.0.0.1:8505/restore_backup"
+API_CREATE_BACKUP_URL = "http://127.0.0.1:8505/create_backup"
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
@@ -119,13 +120,22 @@ def get_api_health():
 
 
 def get_backup_items():
+    items = []
     try:
-        res = requests.get(API_BACKUPS_URL, timeout=15)
-        data = res.json()
-        return data.get("items", [])
+        for name in os.listdir(BACKUP_DIR):
+            if name.endswith(".tar.gz"):
+                full_path = os.path.join(BACKUP_DIR, name)
+                stat = os.stat(full_path)
+
+                items.append({
+                    "filename": name,
+                    "size": stat.st_size,
+                    "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                })
     except Exception as e:
-        print(f"Backup List Load Error: {e}")
-        return []
+        print("Backup read error:", e)
+
+    return sorted(items, key=lambda x: x["filename"], reverse=True)
 
 
 @app.route("/")
@@ -216,11 +226,13 @@ def create_backup():
 @app.route("/restore_backup", methods=["POST"])
 def restore_backup():
     filename = request.form.get("filename", "").strip()
+    mode = request.form.get("mode", "all").strip()
+
     if not filename:
         return redirect(url_for("home"))
 
     try:
-        requests.get(API_RESTORE_BACKUP_URL, params={"filename": filename}, timeout=300)
+        requests.get(API_RESTORE_BACKUP_URL, params={"filename": filename, "mode": mode}, timeout=300)
     except Exception as e:
         print(f"Restore Backup API Call Error: {e}")
     return redirect(url_for("home"))
