@@ -187,11 +187,6 @@ def moving_toward_center(x_score, slope):
 
 
 def calc_status_from_xscore(x_score, slope, volatility):
-    """
-    플렌X 실제 X-Score 기준 상태 판단
-    낮은 점수 = LONG 쪽
-    높은 점수 = SHORT 쪽
-    """
     if volatility > 12:
         return "WAIT"
 
@@ -346,11 +341,6 @@ def choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end):
 
 
 def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_start, jarvis_end, comparison, x_score, slope_5):
-    """
-    최종 진입 확정은 더 엄격하게:
-    - FINAL은 AGREE + 중심 회귀 방향일 때만 확정
-    - GPT_ONLY / JARVIS_ONLY는 최종 후보가 아니라 WATCH 처리
-    """
     result = comparison["comparison_result"]
 
     if result == "AGREE" and gpt_direction in ["LONG", "SHORT"] and moving_toward_center(x_score, slope_5):
@@ -428,7 +418,6 @@ def build_row(item, history):
         slope_5
     )
 
-    # 진짜 ENTRY 상태는 FINAL이 LONG/SHORT로 확정된 경우만
     if final_direction == "LONG":
         status = "LONG_ENTRY"
         decision = "진입강력"
@@ -746,9 +735,6 @@ def collect_pairs(driver):
 
 
 def detect_entry_change(rows):
-    """
-    텔레그램은 WAIT/SKIP -> LONG_ENTRY/SHORT_ENTRY 로 바뀔 때만.
-    """
     prev = load_json(LAST_STATUS_FILE, {})
     alerts = []
 
