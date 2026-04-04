@@ -13,7 +13,7 @@
             font-family: Arial, sans-serif;
         }
         .wrap {
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
             padding: 24px;
         }
@@ -25,31 +25,54 @@
             color: #94a3b8;
             margin-bottom: 24px;
         }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            margin-bottom: 24px;
-        }
         .card {
             background: #111827;
             border: 1px solid #334155;
             border-radius: 14px;
             padding: 16px;
-        }
-        .card h3 {
-            margin: 0 0 10px 0;
-            font-size: 14px;
-            color: #94a3b8;
-            font-weight: normal;
-        }
-        .card .v {
-            font-size: 28px;
-            font-weight: bold;
+            margin-bottom: 20px;
         }
         .section-title {
             font-size: 20px;
             margin: 28px 0 12px 0;
+        }
+        .top-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 10px 14px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        .search-box {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0b1220;
+            color: white;
+            width: 260px;
+        }
+        .ok {
+            color: #22c55e;
+            font-weight: bold;
+        }
+        .err {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        .meta-line {
+            margin-top: 8px;
+            color: #cbd5e1;
+            font-size: 14px;
         }
         table {
             width: 100%;
@@ -63,13 +86,14 @@
             padding: 12px 10px;
             font-size: 13px;
             text-align: center;
-            vertical-align: top;
+            vertical-align: middle;
         }
         th {
             background: #1e293b;
             color: #cbd5e1;
             position: sticky;
             top: 0;
+            z-index: 2;
         }
         tr:hover {
             background: #172033;
@@ -88,46 +112,30 @@
         .skip { background: #1f2937; color: #94a3b8; }
         .agree { background: #14532d; color: #86efac; }
         .conflict { background: #7f1d1d; color: #fecaca; }
-        .note {
-            text-align: left;
-            white-space: pre-line;
-            line-height: 1.45;
-            min-width: 280px;
-        }
         .small {
             color: #94a3b8;
             font-size: 12px;
+            margin-top: 4px;
         }
-        .system-box {
-            background: #111827;
-            border: 1px solid #334155;
-            border-radius: 14px;
-            padding: 16px;
-            margin-bottom: 24px;
-        }
-        .update-btn {
-            padding: 10px 16px;
-            font-size: 14px;
-            border-radius: 8px;
-            border: none;
-            background: #2563eb;
-            color: white;
-            cursor: pointer;
-        }
-        .ok {
-            color: #22c55e;
+        .value-box {
+            line-height: 1.5;
+            white-space: nowrap;
             font-weight: bold;
         }
-        .err {
-            color: #ef4444;
-            font-weight: bold;
-        }
-        @media (max-width: 1200px) {
-            .grid { grid-template-columns: repeat(2, 1fr); }
+        @media (max-width: 1100px) {
+            .top-row {
+                grid-template-columns: 1fr;
+            }
+            .search-box {
+                width: 100%;
+                box-sizing: border-box;
+            }
         }
         @media (max-width: 700px) {
-            .grid { grid-template-columns: 1fr; }
-            th, td { font-size: 11px; padding: 8px 6px; }
+            th, td {
+                font-size: 11px;
+                padding: 8px 6px;
+            }
         }
     </style>
 </head>
@@ -135,108 +143,120 @@
 <div class="wrap">
     <h1>🚀 PLAN X 8501 DASHBOARD</h1>
     <div class="sub">
-        마지막 업데이트: {{ data.updated_at }} |
+        마지막 데이터 업데이트: {{ data.updated_at }} |
         페어 수: {{ data.count }} |
         ENTRY 신호: {{ data.entry_signals }}
     </div>
 
-    <div class="section-title">⚙️ 시스템</div>
-    <div class="system-box">
-        <form action="/update" method="post">
-            <button class="update-btn" type="submit">🚀 8501 업데이트 실행</button>
-        </form>
+    <div class="top-row">
+        <div class="card">
+            <div class="section-title" style="margin-top:0;">⚙️ 업그레이드</div>
 
-        <div style="margin-top:12px;">
-            <b>API 상태:</b>
-            {% if api_health.status == 'ok' %}
-                <span class="ok">정상</span>
-            {% else %}
-                <span class="err">오류</span>
+            <form action="/update_all" method="post" style="display:inline;">
+                <button class="btn" type="submit">8501 전체 업그레이드</button>
+            </form>
+            <form action="/update_gpt" method="post" style="display:inline;">
+                <button class="btn" type="submit">8501 GPT 업그레이드</button>
+            </form>
+            <form action="/update_jarvis" method="post" style="display:inline;">
+                <button class="btn" type="submit">8501 JARVIS 업그레이드</button>
+            </form>
+            <form action="/update_web" method="post" style="display:inline;">
+                <button class="btn" type="submit">8501 WEB 업그레이드</button>
+            </form>
+
+            <div class="meta-line">
+                <b>API 상태:</b>
+                {% if api_health.status == 'ok' %}
+                    <span class="ok">정상</span>
+                {% else %}
+                    <span class="err">오류</span>
+                {% endif %}
+            </div>
+
+            <div class="meta-line">
+                <b>현재 버전:</b> {{ current_version }}
+            </div>
+
+            {% if update_result %}
+            <div class="meta-line">
+                <b>최근 업데이트 상태:</b>
+                {% if update_result.update.status == 'SUCCESS' %}
+                    <span class="ok">SUCCESS</span>
+                {% else %}
+                    <span class="err">ERROR</span>
+                {% endif %}
+            </div>
+
+            <div class="meta-line">
+                <b>업데이트 종류:</b> {{ update_result.update.mode }}
+            </div>
+
+            {% if update_result.update.time %}
+            <div class="meta-line">
+                <b>업데이트 시간:</b> {{ update_result.update.time }}
+            </div>
+            {% endif %}
+
+            {% if update_result.update.before or update_result.update.after %}
+            <div class="meta-line">
+                <b>버전:</b> {{ update_result.update.before }} → {{ update_result.update.after }}
+            </div>
+            {% endif %}
+
+            {% if update_result.update.updated_files %}
+            <div class="small" style="margin-top:10px; white-space: pre-line;">
+                {{ update_result.update.updated_files }}
+            </div>
+            {% endif %}
+
+            {% if update_result.update.output %}
+            <div class="small" style="margin-top:10px; white-space: pre-line;">
+                {{ update_result.update.output }}
+            </div>
+            {% endif %}
+
+            {% if update_result.update.error %}
+            <div class="small" style="margin-top:10px; white-space: pre-line;">
+                {{ update_result.update.error }}
+            </div>
+            {% endif %}
             {% endif %}
         </div>
 
-        {% if update_result %}
-        <div style="margin-top:12px;">
-            <b>최근 업데이트:</b>
-            {% if update_result.status == 'SUCCESS' %}
-                <span class="ok">SUCCESS</span>
-            {% else %}
-                <span class="err">ERROR</span>
-            {% endif %}
-        </div>
-
-        {% if update_result.time %}
-        <div class="small" style="margin-top:6px;">
-            시간: {{ update_result.time }}
-        </div>
-        {% endif %}
-
-        {% if update_result.output %}
-        <div class="small" style="margin-top:6px; white-space: pre-line;">
-            {{ update_result.output }}
-        </div>
-        {% endif %}
-
-        {% if update_result.error %}
-        <div class="small" style="margin-top:6px; white-space: pre-line;">
-            {{ update_result.error }}
-        </div>
-        {% endif %}
-        {% endif %}
-    </div>
-
-    <div class="grid">
         <div class="card">
-            <h3>GPT LONG</h3>
-            <div class="v">{{ data.summary.gpt_long }}</div>
-        </div>
-        <div class="card">
-            <h3>GPT SHORT</h3>
-            <div class="v">{{ data.summary.gpt_short }}</div>
-        </div>
-        <div class="card">
-            <h3>JARVIS LONG</h3>
-            <div class="v">{{ data.summary.jarvis_long }}</div>
-        </div>
-        <div class="card">
-            <h3>JARVIS SHORT</h3>
-            <div class="v">{{ data.summary.jarvis_short }}</div>
-        </div>
-
-        <div class="card">
-            <h3>AGREE</h3>
-            <div class="v">{{ data.summary.agree }}</div>
-        </div>
-        <div class="card">
-            <h3>CONFLICT</h3>
-            <div class="v">{{ data.summary.conflict }}</div>
-        </div>
-        <div class="card">
-            <h3>WATCH</h3>
-            <div class="v">{{ data.summary.watch }}</div>
-        </div>
-        <div class="card">
-            <h3>NO TRADE</h3>
-            <div class="v">{{ data.summary.no_trade }}</div>
+            <div class="section-title" style="margin-top:0;">🔎 코인 검색</div>
+            <form action="/" method="get">
+                <input
+                    class="search-box"
+                    type="text"
+                    name="q"
+                    placeholder="예: BTC, ETH, SOL"
+                    value="{{ search_query }}"
+                />
+                <button class="btn" type="submit">검색</button>
+            </form>
+            <div class="small" style="margin-top:10px;">
+                페어명 기준 부분 검색 가능
+            </div>
         </div>
     </div>
 
-    <div class="section-title">📊 GPT vs JARVIS 비교</div>
+    <div class="section-title">📊 플렌X 입력용 X-Score 보기</div>
 
     <table>
         <thead>
             <tr>
                 <th>PAIR</th>
-                <th>X_SCORE</th>
+                <th>현재 X_SCORE</th>
                 <th>STATUS</th>
                 <th>GPT</th>
+                <th>GPT 시작/종료</th>
                 <th>JARVIS</th>
+                <th>JARVIS 시작/종료</th>
                 <th>비교</th>
-                <th>BIAS</th>
                 <th>FINAL</th>
-                <th>GPT START/END</th>
-                <th>JARVIS START/END</th>
-                <th>REASON</th>
+                <th>FINAL 시작/종료</th>
             </tr>
         </thead>
         <tbody>
@@ -254,6 +274,10 @@
                 </td>
 
                 <td>
+                    <div class="value-box">{{ row.gpt_start }} / {{ row.gpt_end }}</div>
+                </td>
+
+                <td>
                     {% set jd = row.jarvis_direction %}
                     <span class="tag {% if jd == 'LONG' %}long{% elif jd == 'SHORT' %}short{% elif jd == 'SKIP' %}skip{% else %}wait{% endif %}">
                         {{ jd }}
@@ -262,16 +286,13 @@
                 </td>
 
                 <td>
-                    {% set cr = row.comparison_result %}
-                    <span class="tag {% if cr == 'AGREE' %}agree{% elif cr == 'CONFLICT' %}conflict{% else %}wait{% endif %}">
-                        {{ cr }}
-                    </span>
+                    <div class="value-box">{{ row.jarvis_start }} / {{ row.jarvis_end }}</div>
                 </td>
 
                 <td>
-                    {% set mb = row.manual_trade_bias %}
-                    <span class="tag {% if mb == 'AGREE_HIGH' %}agree{% elif mb == 'CAUTION' %}conflict{% elif mb == 'WATCH' %}watch{% elif mb == 'NO_TRADE' %}skip{% else %}wait{% endif %}">
-                        {{ mb }}
+                    {% set cr = row.comparison_result %}
+                    <span class="tag {% if cr == 'AGREE' %}agree{% elif cr == 'CONFLICT' %}conflict{% else %}wait{% endif %}">
+                        {{ cr }}
                     </span>
                 </td>
 
@@ -283,9 +304,9 @@
                     <div class="small">{{ row.final_source }}</div>
                 </td>
 
-                <td>{{ row.gpt_start }} / {{ row.gpt_end }}</td>
-                <td>{{ row.jarvis_start }} / {{ row.jarvis_end }}</td>
-                <td class="note">{{ row.jarvis_reason }}</td>
+                <td>
+                    <div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div>
+                </td>
             </tr>
         {% endfor %}
         </tbody>
