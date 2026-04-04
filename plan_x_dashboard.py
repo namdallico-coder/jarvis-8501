@@ -4,17 +4,23 @@
 import os
 import json
 import requests
-from flask import Flask, render_template, redirect, url_for, request
+from flask import Flask, render_template, redirect, url_for, request, send_from_directory
 
 BASE_DIR = "/home/ubuntu/jarvis-field/8501"
+BACKUP_DIR = "/home/ubuntu/backups"
+
 DASHBOARD_JSON = os.path.join(BASE_DIR, "dashboard.json")
 UPDATE_RESULT_FILE = os.path.join(BASE_DIR, "update_result.json")
+BACKUP_RESULT_FILE = os.path.join(BASE_DIR, "backup_result.json")
 
 API_HEALTH_URL = "http://127.0.0.1:8505/health"
 API_UPDATE_ALL_URL = "http://127.0.0.1:8505/update"
 API_UPDATE_GPT_URL = "http://127.0.0.1:8505/update_gpt"
 API_UPDATE_JARVIS_URL = "http://127.0.0.1:8505/update_jarvis"
 API_UPDATE_WEB_URL = "http://127.0.0.1:8505/update_web"
+API_BACKUPS_URL = "http://127.0.0.1:8505/backups"
+API_CREATE_BACKUP_URL = "http://127.0.0.1:8505/create_backup"
+API_RESTORE_BACKUP_URL = "http://127.0.0.1:8505/restore_backup"
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 
@@ -79,28 +85,26 @@ def load_update_result():
     try:
         with open(UPDATE_RESULT_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:
-        return {
-            "latest": {
-                "mode": "unknown",
-                "status": "ERROR",
-                "before": "-",
-                "after": "-",
-                "target": "-",
-                "updated_files": [],
-                "output": "",
-                "error": str(e),
-                "time": "-"
-            },
-            "statuses": default_update_statuses(),
-            "api": {
-                "service": "jarvis-8501-api.service",
-                "status": "ERROR",
-                "version": "-",
-                "origin_main": "-",
-                "last_update": "-"
-            }
-        }
+    except Exception:
+        return None
+
+
+def default_backup_state():
+    return {
+        "last_backup": {"status": "", "filename": "-", "time": "-", "error": ""},
+        "last_restore": {"status": "", "filename": "-", "time": "-", "error": ""}
+    }
+
+
+def load_backup_result():
+    if not os.path.exists(BACKUP_RESULT_FILE):
+        return default_backup_state()
+
+    try:
+        with open(BACKUP_RESULT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default_backup_state()
 
 
 def get_api_health():
@@ -114,11 +118,23 @@ def get_api_health():
         }
 
 
+def get_backup_items():
+    try:
+        res = requests.get(API_BACKUPS_URL, timeout=15)
+        data = res.json()
+        return data.get("items", [])
+    except Exception as e:
+        print(f"Backup List Load Error: {e}")
+        return []
+
+
 @app.route("/")
 def home():
     data = load_dashboard()
     api_health = get_api_health()
     update_result = load_update_result()
+    backup_state = load_backup_result()
+    backup_items = get_backup_items()
 
     q = request.args.get("q", "").strip().upper()
     rows = data.get("rows", [])
@@ -146,6 +162,8 @@ def home():
         api_health=api_health,
         current_version=current_version,
         update_statuses=update_statuses,
+        backup_state=backup_state,
+        backup_items=backup_items,
         search_query=q
     )
 
@@ -184,6 +202,34 @@ def update_web():
     except Exception as e:
         print(f"Update WEB API Call Error: {e}")
     return redirect(url_for("home"))
+
+
+@app.route("/create_backup", methods=["POST"])
+def create_backup():
+    try:
+        requests.get(API_CREATE_BACKUP_URL, timeout=300)
+    except Exception as e:
+        print(f"Create Backup API Call Error: {e}")
+    return redirect(url_for("home"))
+
+
+@app.route("/restore_backup", methods=["POST"])
+def restore_backup():
+    filename = request.form.get("filename", "").strip()
+    if not filename:
+        return redirect(url_for("home"))
+
+    try:
+        requests.get(API_RESTORE_BACKUP_URL, params={"filename": filename}, timeout=300)
+    except Exception as e:
+        print(f"Restore Backup API Call Error: {e}")
+    return redirect(url_for("home"))
+
+
+@app.route("/download_backup/<path:filename>")
+def download_backup(filename):
+    safe_name = os.path.basename(filename)
+    return send_from_directory(BACKUP_DIR, safe_name, as_attachment=True)
 
 
 if __name__ == "__main__":
