@@ -63,6 +63,15 @@ def load_dashboard():
     return data
 
 
+def default_update_statuses():
+    return {
+        "all": {"time": "-", "after": "-", "status": ""},
+        "gpt": {"time": "-", "after": "-", "status": ""},
+        "jarvis": {"time": "-", "after": "-", "status": ""},
+        "web": {"time": "-", "after": "-", "status": ""}
+    }
+
+
 def load_update_result():
     if not os.path.exists(UPDATE_RESULT_FILE):
         return None
@@ -72,7 +81,7 @@ def load_update_result():
             return json.load(f)
     except Exception as e:
         return {
-            "update": {
+            "latest": {
                 "mode": "unknown",
                 "status": "ERROR",
                 "before": "-",
@@ -83,22 +92,13 @@ def load_update_result():
                 "error": str(e),
                 "time": "-"
             },
+            "statuses": default_update_statuses(),
             "api": {
                 "service": "jarvis-8501-api.service",
                 "status": "ERROR",
                 "version": "-",
                 "origin_main": "-",
                 "last_update": "-"
-            },
-            "engine_restart": {
-                "service": "jarvis-8501.service",
-                "status": "ERROR",
-                "error": str(e)
-            },
-            "web_restart": {
-                "service": "jarvis-8501-web.service",
-                "status": "ERROR",
-                "error": str(e)
             }
         }
 
@@ -129,17 +129,23 @@ def home():
     data["rows"] = rows
 
     current_version = "-"
-    if update_result and update_result.get("api", {}).get("version"):
-        current_version = update_result["api"]["version"]
-    elif api_health.get("version"):
-        current_version = api_health.get("version")
+    update_statuses = default_update_statuses()
+
+    if update_result:
+        if update_result.get("api", {}).get("version"):
+            current_version = update_result["api"]["version"]
+        elif api_health.get("version"):
+            current_version = api_health.get("version")
+
+        if update_result.get("statuses"):
+            update_statuses = update_result["statuses"]
 
     return render_template(
         "plan_x_index.html",
         data=data,
         api_health=api_health,
-        update_result=update_result,
         current_version=current_version,
+        update_statuses=update_statuses,
         search_query=q
     )
 

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import os
 import subprocess
 import requests
 from datetime import datetime
@@ -20,16 +21,9 @@ TELEGRAM_CHAT_ID = "8462590648"
 app = FastAPI(title="JARVIS 8501 API")
 
 FILE_GROUPS = {
-    "gpt": [
-        "plan_x_engine.py"
-    ],
-    "jarvis": [
-        "plan_x_logic.py"
-    ],
-    "web": [
-        "plan_x_dashboard.py",
-        "templates/plan_x_index.html"
-    ]
+    "gpt": ["plan_x_engine.py"],
+    "jarvis": ["plan_x_logic.py"],
+    "web": ["plan_x_dashboard.py", "templates/plan_x_index.html"]
 }
 
 
@@ -73,14 +67,6 @@ def send_telegram(msg):
         pass
 
 
-def write_update_result(data):
-    try:
-        with open(UPDATE_RESULT_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
 def get_git_version(ref="HEAD"):
     result = run_cmd(["git", "rev-parse", "--short", ref])
     return result["stdout"] if result["ok"] else "UNKNOWN"
@@ -120,7 +106,67 @@ def fetch_origin_main():
     return run_cmd(["git", "fetch", "origin", "main"], timeout=120)
 
 
-def build_base_update_result(mode):
+def default_statuses():
+    return {
+        "all": {"time": "-", "after": "-", "status": ""},
+        "gpt": {"time": "-", "after": "-", "status": ""},
+        "jarvis": {"time": "-", "after": "-", "status": ""},
+        "web": {"time": "-", "after": "-", "status": ""}
+    }
+
+
+def read_update_result():
+    if not os.path.exists(UPDATE_RESULT_FILE):
+        return {
+            "latest": {},
+            "statuses": default_statuses(),
+            "api": {}
+        }
+
+    try:
+        with open(UPDATE_RESULT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if "statuses" not in data:
+            data["statuses"] = default_statuses()
+        if "latest" not in data:
+            data["latest"] = {}
+
+        return data
+    except Exception:
+        return {
+            "latest": {},
+            "statuses": default_statuses(),
+            "api": {}
+        }
+
+
+def write_update_result(latest_result):
+    data = read_update_result()
+    mode = latest_result.get("mode", "unknown")
+
+    data["latest"] = latest_result
+
+    if mode in data["statuses"]:
+        data["statuses"][mode] = {
+            "time": latest_result.get("time", "-"),
+            "after": latest_result.get("after", "-"),
+            "status": latest_result.get("status", "")
+        }
+
+    data["api"] = {
+        "service": API_SERVICE,
+        "status": "RUNNING",
+        "version": get_git_version("HEAD"),
+        "origin_main": get_git_version("origin/main"),
+        "last_update": get_last_update_time()
+    }
+
+    with open(UPDATE_RESULT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def build_base_result(mode):
     return {
         "mode": mode,
         "status": "ERROR",
@@ -130,12 +176,14 @@ def build_base_update_result(mode):
         "updated_files": [],
         "output": "",
         "error": "",
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
+        "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
     }
 
 
 def full_update():
-    result = build_base_update_result("all")
+    result = build_base_result("all")
     result["updated_files"] = ["ALL"]
 
     fetch_result = fetch_origin_main()
@@ -153,8 +201,9 @@ def full_update():
 
     if pull_result["ok"]:
         result["status"] = "SUCCESS"
+        result["engine_restart"] = schedule_restart(ENGINE_SERVICE)
+        result["web_restart"] = schedule_restart(WEB_SERVICE)
     else:
-        result["status"] = "ERROR"
         if not result["error"]:
             result["error"] = "git pull failed"
 
@@ -162,7 +211,7 @@ def full_update():
 
 
 def partial_update(target_name):
-    result = build_base_update_result(target_name)
+    result = build_base_result(target_name)
     files = FILE_GROUPS.get(target_name, [])
     result["updated_files"] = files
 
@@ -183,80 +232,36 @@ def partial_update(target_name):
 
     if checkout_result["ok"]:
         result["status"] = "SUCCESS"
+
+        if target_name in ["gpt", "jarvis"]:
+            result["engine_restart"] = schedule_restart(ENGINE_SERVICE)
+
+        if target_name == "web":
+            result["web_restart"] = schedule_restart(WEB_SERVICE)
     else:
-        result["status"] = "ERROR"
         if not result["error"]:
             result["error"] = "partial checkout failed"
 
     return result
 
 
-def build_restart_result(target_name, update_status):
-    if update_status != "SUCCESS":
-        return {
-            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
-            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
-        }
+def finalize(result):
+    write_update_result(result)
 
-    if target_name == "all":
-        return {
-            "engine_restart": schedule_restart(ENGINE_SERVICE),
-            "web_restart": schedule_restart(WEB_SERVICE)
-        }
-
-    if target_name in ["gpt", "jarvis"]:
-        return {
-            "engine_restart": schedule_restart(ENGINE_SERVICE),
-            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
-        }
-
-    if target_name == "web":
-        return {
-            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
-            "web_restart": schedule_restart(WEB_SERVICE)
-        }
-
-    return {
-        "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
-        "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
-    }
-
-
-def finalize_result(target_name, update_result):
-    restart_result = build_restart_result(target_name, update_result["status"])
-
-    final_result = {
-        "update": update_result,
-        "api": {
-            "service": API_SERVICE,
-            "status": "RUNNING",
-            "version": get_git_version("HEAD"),
-            "origin_main": get_git_version("origin/main"),
-            "last_update": get_last_update_time()
-        },
-        "engine_restart": restart_result["engine_restart"],
-        "web_restart": restart_result["web_restart"]
-    }
-
-    write_update_result(final_result)
-
-    if update_result["status"] == "SUCCESS":
+    if result["status"] == "SUCCESS":
         send_telegram(
-            f"✅ {target_name.upper()} 업데이트 완료\n"
-            f"time={update_result.get('time', '-')}\n"
-            f"before={update_result.get('before', '-')}\n"
-            f"after={update_result.get('after', '-')}\n"
-            f"target={update_result.get('target', '-')}\n"
-            f"files={update_result.get('updated_files', [])}"
+            f"✅ {result['mode'].upper()} 업데이트 완료\n"
+            f"time={result.get('time', '-')}\n"
+            f"after={result.get('after', '-')}"
         )
     else:
         send_telegram(
-            f"❌ {target_name.upper()} 업데이트 실패\n"
-            f"time={update_result.get('time', '-')}\n"
-            f"error={update_result.get('error', '-')}"
+            f"❌ {result['mode'].upper()} 업데이트 실패\n"
+            f"time={result.get('time', '-')}\n"
+            f"error={result.get('error', '-')}"
         )
 
-    return final_result
+    return result
 
 
 @app.get("/health")
@@ -272,19 +277,19 @@ def health():
 
 @app.get("/update")
 def update_all():
-    return finalize_result("all", full_update())
+    return finalize(full_update())
 
 
 @app.get("/update_gpt")
 def update_gpt():
-    return finalize_result("gpt", partial_update("gpt"))
+    return finalize(partial_update("gpt"))
 
 
 @app.get("/update_jarvis")
 def update_jarvis():
-    return finalize_result("jarvis", partial_update("jarvis"))
+    return finalize(partial_update("jarvis"))
 
 
 @app.get("/update_web")
 def update_web():
-    return finalize_result("web", partial_update("web"))
+    return finalize(partial_update("web"))

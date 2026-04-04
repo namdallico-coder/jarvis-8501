@@ -133,6 +133,30 @@
             white-space: nowrap;
             font-weight: bold;
         }
+        .upgrade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            background: #0b1220;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .upgrade-table th,
+        .upgrade-table td {
+            border-bottom: 1px solid #243041;
+            padding: 12px 10px;
+            font-size: 13px;
+            text-align: center;
+        }
+        .upgrade-table th {
+            background: #182235;
+            color: #cbd5e1;
+        }
+        .upgrade-name {
+            text-align: left !important;
+            font-weight: bold;
+            color: #e2e8f0;
+        }
         @media (max-width: 1100px) {
             .top-row {
                 grid-template-columns: 1fr;
@@ -143,7 +167,9 @@
             }
         }
         @media (max-width: 700px) {
-            th, td {
+            th, td,
+            .upgrade-table th,
+            .upgrade-table td {
                 font-size: 11px;
                 padding: 8px 6px;
             }
@@ -189,81 +215,77 @@
                 <b>현재 버전:</b> {{ current_version or '-' }}
             </div>
 
-            <div class="block">
-                {% if update_result and update_result.update %}
-                    <div class="meta-line">
-                        <b>최근 업데이트 상태:</b>
-                        {% if update_result.update.status == 'SUCCESS' %}
-                            <span class="ok">SUCCESS</span>
-                        {% else %}
-                            <span class="err">ERROR</span>
-                        {% endif %}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>업데이트 종류:</b> {{ update_result.update.mode or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>업데이트 시간:</b> {{ update_result.update.time or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>이전 버전:</b> {{ update_result.update.before or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>현재 버전:</b> {{ update_result.update.after or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>대상 버전:</b> {{ update_result.update.target or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>반영 파일:</b> {{ update_result.update.updated_files or '-' }}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>엔진 재시작:</b>
-                        {% if update_result.engine_restart %}
-                            {% if update_result.engine_restart.status == 'SCHEDULED' %}
-                                <span class="ok">{{ update_result.engine_restart.status }}</span>
-                            {% elif update_result.engine_restart.status == 'SKIPPED' %}
-                                <span class="warn">{{ update_result.engine_restart.status }}</span>
+            <table class="upgrade-table">
+                <thead>
+                    <tr>
+                        <th>이름</th>
+                        <th>업그레이드 날짜</th>
+                        <th>현재 버전</th>
+                        <th>설치여부</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="upgrade-name">8501 전체 업그레이드</td>
+                        <td>{{ update_statuses.all.time or '-' }}</td>
+                        <td>{{ update_statuses.all.after or '-' }}</td>
+                        <td>
+                            {% if update_statuses.all.status == 'SUCCESS' %}
+                                <span class="ok">성공</span>
+                            {% elif update_statuses.all.status == 'ERROR' %}
+                                <span class="err">실패</span>
                             {% else %}
-                                <span class="err">{{ update_result.engine_restart.status }}</span>
+                                <span class="warn">미설치</span>
                             {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </div>
-
-                    <div class="meta-line">
-                        <b>웹 재시작:</b>
-                        {% if update_result.web_restart %}
-                            {% if update_result.web_restart.status == 'SCHEDULED' %}
-                                <span class="ok">{{ update_result.web_restart.status }}</span>
-                            {% elif update_result.web_restart.status == 'SKIPPED' %}
-                                <span class="warn">{{ update_result.web_restart.status }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="upgrade-name">GPT 업그레이드</td>
+                        <td>{{ update_statuses.gpt.time or '-' }}</td>
+                        <td>{{ update_statuses.gpt.after or '-' }}</td>
+                        <td>
+                            {% if update_statuses.gpt.status == 'SUCCESS' %}
+                                <span class="ok">성공</span>
+                            {% elif update_statuses.gpt.status == 'ERROR' %}
+                                <span class="err">실패</span>
                             {% else %}
-                                <span class="err">{{ update_result.web_restart.status }}</span>
+                                <span class="warn">미설치</span>
                             {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="upgrade-name">JARVIS 업그레이드</td>
+                        <td>{{ update_statuses.jarvis.time or '-' }}</td>
+                        <td>{{ update_statuses.jarvis.after or '-' }}</td>
+                        <td>
+                            {% if update_statuses.jarvis.status == 'SUCCESS' %}
+                                <span class="ok">성공</span>
+                            {% elif update_statuses.jarvis.status == 'ERROR' %}
+                                <span class="err">실패</span>
+                            {% else %}
+                                <span class="warn">미설치</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="upgrade-name">WEB 업그레이드</td>
+                        <td>{{ update_statuses.web.time or '-' }}</td>
+                        <td>{{ update_statuses.web.after or '-' }}</td>
+                        <td>
+                            {% if update_statuses.web.status == 'SUCCESS' %}
+                                <span class="ok">성공</span>
+                            {% elif update_statuses.web.status == 'ERROR' %}
+                                <span class="err">실패</span>
+                            {% else %}
+                                <span class="warn">미설치</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
 
-                    <div class="small" style="white-space: pre-line; margin-top:8px;">
-                        <b>출력:</b><br>{{ update_result.update.output or '-' }}
-                    </div>
-
-                    <div class="small" style="white-space: pre-line; margin-top:8px;">
-                        <b>에러:</b><br>{{ update_result.update.error or '-' }}
-                    </div>
-                {% else %}
-                    <div class="meta-line"><span class="warn">업데이트 기록 없음</span></div>
-                {% endif %}
+            <div class="small" style="margin-top:10px;">
+                각 업그레이드의 마지막 성공/실패 이력 기준 표시
             </div>
         </div>
 
