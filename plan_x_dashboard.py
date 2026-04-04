@@ -113,10 +113,7 @@ def get_api_health():
         res = requests.get(API_HEALTH_URL, timeout=5)
         return res.json()
     except Exception as e:
-        return {
-            "status": "ERROR",
-            "error": str(e)
-        }
+        return {"status": "ERROR", "error": str(e)}
 
 
 def get_backup_items():
@@ -126,7 +123,6 @@ def get_backup_items():
             if name.endswith(".tar.gz"):
                 full_path = os.path.join(BACKUP_DIR, name)
                 stat = os.stat(full_path)
-
                 items.append({
                     "filename": name,
                     "size": stat.st_size,
@@ -148,10 +144,8 @@ def home():
 
     q = request.args.get("q", "").strip().upper()
     rows = data.get("rows", [])
-
     if q:
         rows = [r for r in rows if q in str(r.get("pair", "")).upper()]
-
     data["rows"] = rows
 
     current_version = "-"
