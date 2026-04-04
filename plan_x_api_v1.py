@@ -3,20 +3,26 @@
 
 import json
 import os
+import shutil
 import subprocess
-import requests
 from datetime import datetime
-from fastapi import FastAPI
+
+import requests
+from fastapi import FastAPI, Query
 
 BASE_DIR = "/home/ubuntu/jarvis-field/8501"
+PROJECT_ROOT = "/home/ubuntu/jarvis-field"
+BACKUP_DIR = "/home/ubuntu/backups"
+
 UPDATE_RESULT_FILE = f"{BASE_DIR}/update_result.json"
+BACKUP_RESULT_FILE = f"{BASE_DIR}/backup_result.json"
 
 ENGINE_SERVICE = "jarvis-8501.service"
 WEB_SERVICE = "jarvis-8501-web.service"
 API_SERVICE = "jarvis-8501-api.service"
 
-TELEGRAM_TOKEN = "8746898502:AAHqiBZEcec5guPwFTeJG6xZOq9J87KUP58"
-TELEGRAM_CHAT_ID = "8462590648"
+TELEGRAM_TOKEN = "여기에_텔레그램_토큰"
+TELEGRAM_CHAT_ID = "여기에_텔레그램_채팅ID"
 
 app = FastAPI(title="JARVIS 8501 API")
 
@@ -27,11 +33,11 @@ FILE_GROUPS = {
 }
 
 
-def run_cmd(cmd, timeout=60):
+def run_cmd(cmd, timeout=60, cwd=None):
     try:
         result = subprocess.run(
             cmd,
-            cwd=BASE_DIR,
+            cwd=cwd or BASE_DIR,
             capture_output=True,
             text=True,
             timeout=timeout
@@ -65,6 +71,10 @@ def send_telegram(msg):
         )
     except Exception:
         pass
+
+
+def ensure_backup_dir():
+    os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
 def get_git_version(ref="HEAD"):
@@ -166,6 +176,48 @@ def write_update_result(latest_result):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def read_backup_result():
+    if not os.path.exists(BACKUP_RESULT_FILE):
+        return {
+            "last_backup": {
+                "status": "",
+                "filename": "-",
+                "time": "-",
+                "error": ""
+            },
+            "last_restore": {
+                "status": "",
+                "filename": "-",
+                "time": "-",
+                "error": ""
+            }
+        }
+
+    try:
+        with open(BACKUP_RESULT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "last_backup": {
+                "status": "ERROR",
+                "filename": "-",
+                "time": "-",
+                "error": "backup_result.json read error"
+            },
+            "last_restore": {
+                "status": "ERROR",
+                "filename": "-",
+                "time": "-",
+                "error": "backup_result.json read error"
+            }
+        }
+
+
+def write_backup_result(data):
+    with open(BACKUP_RESULT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def build_base_result(mode):
     return {
         "mode": mode,
@@ -245,7 +297,7 @@ def partial_update(target_name):
     return result
 
 
-def finalize(result):
+def finalize_update(result):
     write_update_result(result)
 
     if result["status"] == "SUCCESS":
@@ -264,6 +316,175 @@ def finalize(result):
     return result
 
 
+def list_backups():
+    ensure_backup_dir()
+
+    files = []
+    for name in os.listdir(BACKUP_DIR):
+        if not name.endswith(".tar.gz"):
+            continue
+
+        full_path = os.path.join(BACKUP_DIR, name)
+        try:
+            stat = os.stat(full_path)
+            files.append({
+                "filename": name,
+                "size": stat.st_size,
+                "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        except Exception:
+            continue
+
+    files.sort(key=lambda x: x["filename"], reverse=True)
+    return files
+
+
+def create_backup():
+    ensure_backup_dir()
+
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"jarvis_backup_{now_str}.tar.gz"
+    full_path = os.path.join(BACKUP_DIR, filename)
+
+    cmd = [
+        "tar",
+        "-czf",
+        full_path,
+        "jarvis-field"
+    ]
+
+    result = run_cmd(cmd, timeout=300, cwd="/home/ubuntu")
+
+    backup_state = read_backup_result()
+
+    if result["ok"]:
+        backup_state["last_backup"] = {
+            "status": "SUCCESS",
+            "filename": filename,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error": ""
+        }
+        write_backup_result(backup_state)
+
+        send_telegram(f"✅ 백업 생성 완료\n{filename}")
+
+        return {
+            "status": "SUCCESS",
+            "filename": filename,
+            "time": backup_state["last_backup"]["time"],
+            "output": result["stdout"] or "backup created",
+            "error": ""
+        }
+
+    backup_state["last_backup"] = {
+        "status": "ERROR",
+        "filename": filename,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "error": result["stderr"] or "backup failed"
+    }
+    write_backup_result(backup_state)
+
+    send_telegram(f"❌ 백업 생성 실패\n{filename}\n{backup_state['last_backup']['error']}")
+
+    return {
+        "status": "ERROR",
+        "filename": filename,
+        "time": backup_state["last_backup"]["time"],
+        "output": result["stdout"],
+        "error": backup_state["last_backup"]["error"]
+    }
+
+
+def restore_backup(filename):
+    ensure_backup_dir()
+
+    safe_name = os.path.basename(filename)
+    full_path = os.path.join(BACKUP_DIR, safe_name)
+
+    backup_state = read_backup_result()
+
+    if not os.path.exists(full_path):
+        backup_state["last_restore"] = {
+            "status": "ERROR",
+            "filename": safe_name,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error": "backup file not found"
+        }
+        write_backup_result(backup_state)
+
+        return {
+            "status": "ERROR",
+            "filename": safe_name,
+            "time": backup_state["last_restore"]["time"],
+            "output": "",
+            "error": "backup file not found",
+            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
+            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""},
+            "api_restart": {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
+        }
+
+    cmd = [
+        "tar",
+        "-xzf",
+        full_path,
+        "-C",
+        "/home/ubuntu"
+    ]
+
+    result = run_cmd(cmd, timeout=300, cwd="/home/ubuntu")
+
+    engine_restart = {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""}
+    web_restart = {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
+    api_restart = {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
+
+    if result["ok"]:
+        engine_restart = schedule_restart(ENGINE_SERVICE)
+        web_restart = schedule_restart(WEB_SERVICE)
+        api_restart = schedule_restart(API_SERVICE)
+
+        backup_state["last_restore"] = {
+            "status": "SUCCESS",
+            "filename": safe_name,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error": ""
+        }
+        write_backup_result(backup_state)
+
+        send_telegram(f"✅ 롤백 완료\n{safe_name}")
+
+        return {
+            "status": "SUCCESS",
+            "filename": safe_name,
+            "time": backup_state["last_restore"]["time"],
+            "output": result["stdout"] or "restore complete",
+            "error": "",
+            "engine_restart": engine_restart,
+            "web_restart": web_restart,
+            "api_restart": api_restart
+        }
+
+    backup_state["last_restore"] = {
+        "status": "ERROR",
+        "filename": safe_name,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "error": result["stderr"] or "restore failed"
+    }
+    write_backup_result(backup_state)
+
+    send_telegram(f"❌ 롤백 실패\n{safe_name}\n{backup_state['last_restore']['error']}")
+
+    return {
+        "status": "ERROR",
+        "filename": safe_name,
+        "time": backup_state["last_restore"]["time"],
+        "output": result["stdout"],
+        "error": backup_state["last_restore"]["error"],
+        "engine_restart": engine_restart,
+        "web_restart": web_restart,
+        "api_restart": api_restart
+    }
+
+
 @app.get("/health")
 def health():
     return {
@@ -277,19 +498,38 @@ def health():
 
 @app.get("/update")
 def update_all():
-    return finalize(full_update())
+    return finalize_update(full_update())
 
 
 @app.get("/update_gpt")
 def update_gpt():
-    return finalize(partial_update("gpt"))
+    return finalize_update(partial_update("gpt"))
 
 
 @app.get("/update_jarvis")
 def update_jarvis():
-    return finalize(partial_update("jarvis"))
+    return finalize_update(partial_update("jarvis"))
 
 
 @app.get("/update_web")
 def update_web():
-    return finalize(partial_update("web"))
+    return finalize_update(partial_update("web"))
+
+
+@app.get("/backups")
+def backups():
+    return {
+        "status": "SUCCESS",
+        "items": list_backups(),
+        "last_state": read_backup_result()
+    }
+
+
+@app.get("/create_backup")
+def create_backup_api():
+    return create_backup()
+
+
+@app.get("/restore_backup")
+def restore_backup_api(filename: str = Query(...)):
+    return restore_backup(filename)
