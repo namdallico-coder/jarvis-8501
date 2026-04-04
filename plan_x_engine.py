@@ -7,6 +7,7 @@ import json
 import time
 import traceback
 from datetime import datetime, timedelta
+from statistics import mean, pstdev
 
 import requests
 from selenium import webdriver
@@ -22,8 +23,8 @@ SIGNALS_FILE = os.path.join(BASE_DIR, "signals.json")
 STATE_FILE = os.path.join(BASE_DIR, "collector_state.json")
 DASHBOARD_FILE = os.path.join(BASE_DIR, "dashboard.json")
 LAST_STATUS_FILE = os.path.join(BASE_DIR, "last_status.json")
-ALERT_STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
 PREDICTION_LOG_FILE = os.path.join(BASE_DIR, "prediction_log.json")
+XSCORE_HISTORY_FILE = os.path.join(BASE_DIR, "xscore_history.json")
 
 CHROMEDRIVER_PATH = "/snap/bin/chromium.chromedriver"
 CHROMIUM_BINARY = "/usr/bin/chromium-browser"
@@ -33,14 +34,15 @@ PLENX_DASHBOARD_URL = os.getenv("PLENX_DASHBOARD_URL", "https://v2.plenx.io/dash
 PLENX_EMAIL = os.getenv("PLENX_EMAIL", "westside3500@naver.com")
 PLENX_PASSWORD = os.getenv("PLENX_PASSWORD", "@@ww23456")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8746898502:AAHqiBZEcec5guPwFTeJG6xZOq9J87KUP58")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8462590648")
 
 COLLECT_INTERVAL = 30
 WAIT_TIMEOUT = 20
 PAIR_LIMIT = 24
 HEADLESS = True
 MAX_LOG_ROWS = 5000
+MAX_HISTORY_PER_PAIR = 240
 
 jarvis = JarvisPlenX()
 
@@ -96,43 +98,19 @@ def send_system_alert(msg):
         pass
 
 
-def to_int(x):
-    return int(round(x))
+def clamp(value, low, high):
+    return max(low, min(high, value))
 
 
 def calc_quality(tier, x_score):
     score = 40 if tier == "1" else (28 if tier == "2" else 18)
     if 20 <= x_score <= 28 or 72 <= x_score <= 80:
         score += 35
-    elif 28 < x_score <= 33 or 67 <= x_score < 72:
+    elif 28 < x_score <= 35 or 65 <= x_score < 72:
         score += 18
     else:
         score += 5
     return round(min(score, 100), 2)
-
-
-def calc_status(x_score, quality):
-    if x_score <= 12 or x_score >= 88:
-        return "SKIP"
-    if 20 <= x_score <= 28 and quality >= 70:
-        return "LONG_ENTRY"
-    if 72 <= x_score <= 80 and quality >= 70:
-        return "SHORT_ENTRY"
-    if 28 < x_score <= 33:
-        return "LONG_READY"
-    if 67 <= x_score < 72:
-        return "SHORT_READY"
-    return "WAIT"
-
-
-def calc_decision(status):
-    if "ENTRY" in status:
-        return "진입강력"
-    if "READY" in status:
-        return "주의관찰"
-    if status == "SKIP":
-        return "제외"
-    return "대기"
 
 
 def calc_recommended_amount(tier, quality):
@@ -144,15 +122,95 @@ def calc_winrate(quality):
 
 
 def calc_roi(x_score, quality):
-    return round((abs(x_score) / 2.5) * (quality / 100) * 10, 2)
+    return round((abs(x_score - 50) / 2.5) * (quality / 100) * 10, 2)
 
 
 def calc_safe(quality):
     return round(max(100, min(170, 100 + (quality * 0.7))), 2)
 
 
-def calc_entries():
-    return 26.0, 48.0, 74.0, 52.0
+def load_xscore_history():
+    return load_json(XSCORE_HISTORY_FILE, {})
+
+
+def update_xscore_history(items):
+    history = load_xscore_history()
+    current_time = now_kst_str()
+
+    for item in items:
+        pair = item["pair"]
+        x_score = float(item["x_score"])
+
+        pair_hist = history.get(pair, [])
+        pair_hist.append({
+            "time": current_time,
+            "x_score": x_score
+        })
+
+        if len(pair_hist) > MAX_HISTORY_PER_PAIR:
+            pair_hist = pair_hist[-MAX_HISTORY_PER_PAIR:]
+
+        history[pair] = pair_hist
+
+    write_json(XSCORE_HISTORY_FILE, history)
+    return history
+
+
+def get_xscore_stats(pair, history):
+    pair_hist = history.get(pair, [])
+    values = [float(x["x_score"]) for x in pair_hist if "x_score" in x]
+
+    if len(values) < 3:
+        return {
+            "slope_5": 0.0,
+            "volatility_20": 0.0
+        }
+
+    recent_5 = values[-5:] if len(values) >= 5 else values
+    slope_5 = recent_5[-1] - recent_5[0]
+
+    recent_20 = values[-20:] if len(values) >= 20 else values
+    volatility_20 = pstdev(recent_20) if len(recent_20) >= 2 else 0.0
+
+    return {
+        "slope_5": round(slope_5, 4),
+        "volatility_20": round(volatility_20, 4)
+    }
+
+
+def moving_toward_center(x_score, slope):
+    if x_score < 50:
+        return slope > 0
+    if x_score > 50:
+        return slope < 0
+    return False
+
+
+def calc_status_from_xscore(x_score, slope, volatility):
+    """
+    플렌X 실제 X-Score 기준 상태 판단
+    - 낮은 점수 = LONG 쪽
+    - 높은 점수 = SHORT 쪽
+    """
+    if volatility > 12:
+        return "WAIT"
+
+    # LONG
+    if x_score <= 28:
+        if moving_toward_center(x_score, slope):
+            return "LONG_ENTRY"
+        return "LONG_READY"
+
+    # SHORT
+    if x_score >= 72:
+        if moving_toward_center(x_score, slope):
+            return "SHORT_ENTRY"
+        return "SHORT_READY"
+
+    if 45 <= x_score <= 55:
+        return "WAIT"
+
+    return "WAIT"
 
 
 def calc_gpt_direction(status):
@@ -165,6 +223,49 @@ def calc_gpt_direction(status):
     return "WAIT"
 
 
+def calc_gpt_xscore_range(x_score, status, slope, volatility):
+    x = float(x_score)
+
+    # 변동성 높으면 범위를 넓힌다
+    width_bonus = 0
+    if volatility >= 8:
+        width_bonus = 3
+    elif volatility >= 5:
+        width_bonus = 1
+
+    # LONG
+    if status == "LONG_ENTRY":
+        start_x = clamp(round(x - (6 + width_bonus)), 5, 28)
+        end_x = clamp(round(x + (12 + width_bonus)), 18, 45)
+        if start_x >= end_x:
+            start_x = max(5, end_x - 6)
+        return start_x, end_x
+
+    if status == "LONG_READY":
+        start_x = clamp(round(x - (4 + width_bonus)), 8, 32)
+        end_x = clamp(round(x + (8 + width_bonus)), 18, 45)
+        if start_x >= end_x:
+            start_x = max(5, end_x - 5)
+        return start_x, end_x
+
+    # SHORT
+    if status == "SHORT_ENTRY":
+        start_x = clamp(round(x - (12 + width_bonus)), 55, 82)
+        end_x = clamp(round(x + (6 + width_bonus)), 72, 95)
+        if start_x >= end_x:
+            start_x = max(55, end_x - 6)
+        return start_x, end_x
+
+    if status == "SHORT_READY":
+        start_x = clamp(round(x - (8 + width_bonus)), 55, 85)
+        end_x = clamp(round(x + (4 + width_bonus)), 68, 92)
+        if start_x >= end_x:
+            start_x = max(55, end_x - 5)
+        return start_x, end_x
+
+    return "-", "-"
+
+
 def normalize_jarvis_result(result):
     jarvis_status = str(result.get("jarvis_status", "WAIT")).upper()
     jarvis_reason = str(result.get("jarvis_reason", "")).strip() or "JARVIS_REASON_EMPTY"
@@ -173,22 +274,22 @@ def normalize_jarvis_result(result):
 
     if "SHORT" in jarvis_status:
         direction = "SHORT"
-        confidence = 78 if "강력승인" in str(result.get("jarvis_status", "")) else 62
+        confidence = 78
     elif "LONG" in jarvis_status:
         direction = "LONG"
-        confidence = 78 if "강력승인" in str(result.get("jarvis_status", "")) else 62
-    elif "패스" in str(result.get("jarvis_status", "")):
+        confidence = 78
+    elif "SKIP" in jarvis_status:
         direction = "SKIP"
         confidence = 35
     else:
         direction = "WAIT"
-        confidence = 45 if "진입지연" in str(result.get("jarvis_status", "")) else 20
+        confidence = 45
 
     return {
         "jarvis_direction": direction,
         "jarvis_confidence": confidence,
         "jarvis_reason": jarvis_reason,
-        "jarvis_status_text": str(result.get("jarvis_status", "")),
+        "jarvis_status_text": jarvis_status,
         "jarvis_start": jarvis_start,
         "jarvis_end": jarvis_end
     }
@@ -212,35 +313,57 @@ def compare_gpt_vs_jarvis(gpt_direction, jarvis_direction, jarvis_confidence):
     if jarvis_direction in ["WAIT", "SKIP"] and gpt_direction in ["LONG", "SHORT"]:
         return {
             "comparison_result": "WEAK_GPT_ONLY",
-            "comparison_reason": "GPT 신호는 있으나 JARVIS가 시장상 진입 보류",
-            "manual_trade_bias": "WATCH"
+            "comparison_reason": "GPT 신호는 있으나 JARVIS가 보수적",
+            "manual_trade_bias": "GPT_ONLY"
         }
 
     if gpt_direction in ["WAIT", "SKIP"] and jarvis_direction in ["LONG", "SHORT"]:
         return {
             "comparison_result": "WEAK_JARVIS_ONLY",
-            "comparison_reason": "JARVIS는 기회 포착했으나 GPT는 대기/제외",
-            "manual_trade_bias": "WATCH"
+            "comparison_reason": "JARVIS 신호는 있으나 GPT가 보수적",
+            "manual_trade_bias": "JARVIS_ONLY"
         }
 
     return {
         "comparison_result": "NO_TRADE",
-        "comparison_reason": "양측 모두 적극 진입 신호 아님",
+        "comparison_reason": "양측 모두 진입 신호 아님",
         "manual_trade_bias": "NO_TRADE"
     }
 
 
+def choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end):
+    if isinstance(gpt_start, int) and isinstance(gpt_end, int) and isinstance(jarvis_start, int) and isinstance(jarvis_end, int):
+        start_x = max(min(gpt_start, gpt_end), min(jarvis_start, jarvis_end))
+        end_x = min(max(gpt_start, gpt_end), max(jarvis_start, jarvis_end))
+
+        if start_x < end_x:
+            return start_x, end_x
+
+        return min(gpt_start, jarvis_start), max(gpt_end, jarvis_end)
+
+    if isinstance(gpt_start, int) and isinstance(gpt_end, int):
+        return gpt_start, gpt_end
+
+    if isinstance(jarvis_start, int) and isinstance(jarvis_end, int):
+        return jarvis_start, jarvis_end
+
+    return "-", "-"
+
+
 def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_start, jarvis_end, comparison):
+    result = comparison["comparison_result"]
     bias = comparison["manual_trade_bias"]
 
-    if comparison["comparison_result"] == "AGREE":
-        if gpt_direction == "LONG":
-            return "LONG", "GPT+JARVIS", gpt_start, gpt_end
-        if gpt_direction == "SHORT":
-            return "SHORT", "GPT+JARVIS", gpt_start, gpt_end
+    if result == "AGREE":
+        final_start, final_end = choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end)
+        return gpt_direction, "GPT+JARVIS", final_start, final_end
 
-    if bias == "WATCH":
-        return "WATCH", "SYSTEM", "-", "-"
+    # 너무 보수적으로 비우지 말고 단독 후보도 최종값 허용
+    if bias == "GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
+        return gpt_direction, "GPT_ONLY", gpt_start, gpt_end
+
+    if bias == "JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
+        return jarvis_direction, "JARVIS_ONLY", jarvis_start, jarvis_end
 
     if bias == "CAUTION":
         return "WAIT", "SYSTEM", "-", "-"
@@ -251,42 +374,39 @@ def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_sta
     return "WAIT", "SYSTEM", "-", "-"
 
 
-def build_row(item):
+def build_row(item, history):
     pair = item["pair"].strip().upper()
     tier = str(item.get("tier", "1"))
-    x_score = round(float(item.get("x_score", 0.0)), 2)
+    actual_x_score = round(float(item.get("x_score", 0.0)), 2)
 
-    l_e, l_ex, s_e, s_ex = calc_entries()
-    quality = calc_quality(tier, x_score)
-    status = calc_status(x_score, quality)
-    decision = calc_decision(status)
+    stats = get_xscore_stats(pair, history)
+    slope_5 = stats["slope_5"]
+    volatility_20 = stats["volatility_20"]
+
+    estimated = jarvis.estimate_planx_xscore(pair)
+    estimated_xscore = estimated.get("estimated_xscore")
+    estimated_method = estimated.get("method", "-")
+
+    quality = calc_quality(tier, actual_x_score)
+    status = calc_status_from_xscore(actual_x_score, slope_5, volatility_20)
+    decision = "진입강력" if "ENTRY" in status else ("주의관찰" if "READY" in status else "대기")
 
     gpt_direction = calc_gpt_direction(status)
+    gpt_start, gpt_end = calc_gpt_xscore_range(actual_x_score, status, slope_5, volatility_20)
 
     if gpt_direction == "LONG":
         gpt_status = "GPT_LONG"
-        gpt_reason = "PlenX 점수 기반 LONG 시작/종료점 계산"
-        gpt_start = to_int(l_e)
-        gpt_end = to_int(l_ex)
+        gpt_reason = "플렌X 실제 X-Score 기반 LONG 구간 계산"
     elif gpt_direction == "SHORT":
         gpt_status = "GPT_SHORT"
-        gpt_reason = "PlenX 점수 기반 SHORT 시작/종료점 계산"
-        gpt_start = to_int(s_e)
-        gpt_end = to_int(s_ex)
-    elif gpt_direction == "SKIP":
-        gpt_status = "GPT_SKIP"
-        gpt_reason = "진입 제외"
-        gpt_start = "-"
-        gpt_end = "-"
+        gpt_reason = "플렌X 실제 X-Score 기반 SHORT 구간 계산"
     else:
         gpt_status = "GPT_WAIT"
-        gpt_reason = "대기"
-        gpt_start = "-"
-        gpt_end = "-"
+        gpt_reason = "중립 또는 대기"
 
     jarvis_raw = jarvis.self_analyze({
         "pair": pair,
-        "x_score": x_score,
+        "x_score": actual_x_score,
         "status": status,
         "quality": quality,
         "decision": decision
@@ -308,12 +428,10 @@ def build_row(item):
         comparison
     )
 
-    final_status = final_direction
-
-    jarvis_status = f"{gpt_status} | {jarvis_status_text} | FINAL_{final_direction}"
     merged_reason = (
+        f"actual_x={actual_x_score}, slope_5={slope_5}, vol_20={volatility_20}\n"
         f"GPT: {gpt_reason}\n"
-        f"JARVIS: {jarvis_reason} (신뢰도 {jarvis_confidence})\n"
+        f"JARVIS: {jarvis_reason}\n"
         f"비교: {comparison['comparison_reason']}\n"
         f"FINAL: {final_direction} ({final_source})"
     )
@@ -321,21 +439,26 @@ def build_row(item):
     return {
         "pair": pair,
         "tier": tier,
-        "x_score": x_score,
-        "long_start": to_int(l_e),
-        "long_end": to_int(l_ex),
-        "short_start": to_int(s_e),
-        "short_end": to_int(s_ex),
+        "x_score": actual_x_score,
+        "estimated_x_score": estimated_xscore,
+        "estimated_method": estimated_method,
+        "estimated_z_score": estimated.get("z_score"),
+        "xscore_gap": round(actual_x_score - estimated_xscore, 2) if isinstance(estimated_xscore, (int, float)) else "-",
+
         "status": status,
         "quality": quality,
         "decision": decision,
-        "jarvis_status": jarvis_status,
+        "slope_5": slope_5,
+        "volatility_20": volatility_20,
+
+        "jarvis_status": f"{gpt_status} | {jarvis_status_text} | FINAL_{final_direction}",
         "jarvis_reason": merged_reason,
         "jarvis_start": jarvis_start,
         "jarvis_end": jarvis_end,
+
         "recommended_amount": calc_recommended_amount(tier, quality),
         "winrate": calc_winrate(quality),
-        "roi": calc_roi(x_score, quality),
+        "roi": calc_roi(actual_x_score, quality),
         "safe": calc_safe(quality),
         "updated_at": now_kst_str(),
 
@@ -355,50 +478,59 @@ def build_row(item):
         "manual_trade_bias": comparison["manual_trade_bias"],
 
         "final_direction": final_direction,
-        "final_status": final_status,
+        "final_status": final_direction,
         "final_source": final_source,
         "final_start": final_start,
         "final_end": final_end
     }
 
 
-def safe_build_row(item):
+def safe_build_row(item, history):
     try:
-        return build_row(item)
+        return build_row(item, history)
     except Exception as e:
         pair = str(item.get("pair", "UNKNOWN")).strip().upper()
         return {
             "pair": pair,
             "tier": str(item.get("tier", "1")),
             "x_score": round(float(item.get("x_score", 0.0)), 2),
-            "long_start": 26,
-            "long_end": 48,
-            "short_start": 74,
-            "short_end": 52,
+            "estimated_x_score": "-",
+            "estimated_method": "error",
+            "estimated_z_score": "-",
+            "xscore_gap": "-",
+
             "status": "ERROR",
             "quality": 0,
             "decision": "오류",
+            "slope_5": 0,
+            "volatility_20": 0,
+
             "jarvis_status": "ROW_ERROR",
-            "jarvis_reason": f"ROW_ERROR: {str(e)[:80]}",
+            "jarvis_reason": f"ROW_ERROR: {str(e)[:120]}",
             "jarvis_start": "-",
             "jarvis_end": "-",
+
             "recommended_amount": "낮음",
             "winrate": 0,
             "roi": 0,
             "safe": 0,
             "updated_at": now_kst_str(),
+
             "gpt_direction": "WAIT",
             "gpt_status": "GPT_WAIT",
             "gpt_reason": "오류",
             "gpt_start": "-",
             "gpt_end": "-",
+
             "jarvis_direction": "WAIT",
             "jarvis_confidence": 0,
             "jarvis_reason_only": "ROW_ERROR",
             "jarvis_status_text": "ROW_ERROR",
+
             "comparison_result": "ERROR",
             "comparison_reason": "ROW_BUILD_ERROR",
             "manual_trade_bias": "NO_TRADE",
+
             "final_direction": "WAIT",
             "final_status": "WAIT",
             "final_source": "ERROR",
@@ -409,7 +541,6 @@ def safe_build_row(item):
 
 def append_prediction_logs(rows):
     logs = load_json(PREDICTION_LOG_FILE, [])
-
     current_time = now_kst_str()
     new_logs = []
 
@@ -418,8 +549,9 @@ def append_prediction_logs(rows):
             "logged_at": current_time,
             "pair": r.get("pair", ""),
             "x_score": r.get("x_score", 0),
+            "estimated_x_score": r.get("estimated_x_score", "-"),
+            "xscore_gap": r.get("xscore_gap", "-"),
             "status": r.get("status", ""),
-            "quality": r.get("quality", 0),
 
             "gpt_direction": r.get("gpt_direction", ""),
             "gpt_start": r.get("gpt_start", "-"),
@@ -431,18 +563,12 @@ def append_prediction_logs(rows):
             "jarvis_end": r.get("jarvis_end", "-"),
 
             "comparison_result": r.get("comparison_result", ""),
-            "comparison_reason": r.get("comparison_reason", ""),
             "manual_trade_bias": r.get("manual_trade_bias", ""),
 
             "final_direction": r.get("final_direction", ""),
             "final_source": r.get("final_source", ""),
             "final_start": r.get("final_start", "-"),
-            "final_end": r.get("final_end", "-"),
-
-            "result_status": "PENDING",
-            "result_checked_at": "",
-            "actual_move_pct": "",
-            "winner_ai": ""
+            "final_end": r.get("final_end", "-")
         })
 
     logs.extend(new_logs)
@@ -561,8 +687,6 @@ def collect_pairs(driver):
         pass
 
     body_text = driver.execute_script("return document.body ? document.body.innerText : ''")
-    write_json(os.path.join(BASE_DIR, "body_debug.json"), {"body_text": body_text})
-
     lines = [line.strip() for line in body_text.splitlines() if line.strip()]
 
     results = []
@@ -603,8 +727,7 @@ def collect_pairs(driver):
 
         i += 1
 
-    log(f"[STRUCTURE FIX] parsed rows: {len(results)}")
-    write_json(os.path.join(BASE_DIR, "parse_debug.json"), {"rows": results, "line_count": len(lines)})
+    log(f"[PLENX] parsed rows: {len(results)}")
     return results
 
 
@@ -614,14 +737,20 @@ def detect_entry_change(rows):
 
     for r in rows:
         pair = r["pair"]
-        current = r["status"]
-        prev_status = prev.get(pair, "")
+        current = str(r.get("status", "")).strip().upper()
+        prev_status = str(prev.get(pair, "")).strip().upper()
 
-        if prev_status in ["WAIT", "LONG_READY", "SHORT_READY"] and current in ["LONG_ENTRY", "SHORT_ENTRY"]:
-            alerts.append(f"🔥 {pair} 진입 신호 발생 → {current}")
-
-        if prev_status == "SKIP" and current in ["LONG_ENTRY", "SHORT_ENTRY"]:
-            alerts.append(f"🚨 {pair} SKIP → ENTRY (강력 신호)")
+        if prev_status in ["WAIT", "SKIP"] and current in ["LONG_ENTRY", "SHORT_ENTRY"]:
+            alerts.append(
+                f"🚨 ENTRY 전환 발생\n"
+                f"{pair}\n"
+                f"{prev_status} → {current}\n"
+                f"플렌X={r.get('x_score', '-')}\n"
+                f"GPT={r.get('gpt_start', '-')}/{r.get('gpt_end', '-')}\n"
+                f"JARVIS={r.get('jarvis_start', '-')}/{r.get('jarvis_end', '-')}\n"
+                f"FINAL={r.get('final_direction', '-')}\n"
+                f"FINAL_X={r.get('final_start', '-')}/{r.get('final_end', '-')}"
+            )
 
     new_state = {r["pair"]: r["status"] for r in rows}
     write_json(LAST_STATUS_FILE, new_state)
@@ -629,84 +758,10 @@ def detect_entry_change(rows):
     return alerts
 
 
-def detect_ai_alerts(rows):
-    prev = load_json(ALERT_STATE_FILE, {})
-    alerts = []
-    new_state = {}
-
-    for r in rows:
-        pair = r["pair"]
-
-        current_snapshot = {
-            "comparison_result": r.get("comparison_result", ""),
-            "manual_trade_bias": r.get("manual_trade_bias", ""),
-            "final_direction": r.get("final_direction", ""),
-            "gpt_direction": r.get("gpt_direction", ""),
-            "jarvis_direction": r.get("jarvis_direction", ""),
-            "jarvis_confidence": r.get("jarvis_confidence", 0)
-        }
-
-        new_state[pair] = current_snapshot
-        old_snapshot = prev.get(pair, {})
-
-        changed = current_snapshot != old_snapshot
-        if not changed:
-            continue
-
-        gpt_direction = r.get("gpt_direction", "")
-        jarvis_direction = r.get("jarvis_direction", "")
-        jarvis_confidence = r.get("jarvis_confidence", 0)
-        comparison_result = r.get("comparison_result", "")
-        final_direction = r.get("final_direction", "")
-        manual_trade_bias = r.get("manual_trade_bias", "")
-
-        if comparison_result == "AGREE" and final_direction in ["LONG", "SHORT"]:
-            alerts.append(
-                f"✅ AI 합의\n"
-                f"{pair}\n"
-                f"GPT={gpt_direction} / JARVIS={jarvis_direction} ({jarvis_confidence}%)\n"
-                f"FINAL={final_direction}\n"
-                f"BIAS={manual_trade_bias}"
-            )
-            continue
-
-        if comparison_result == "CONFLICT":
-            alerts.append(
-                f"⚔️ AI 충돌\n"
-                f"{pair}\n"
-                f"GPT={gpt_direction} / JARVIS={jarvis_direction} ({jarvis_confidence}%)\n"
-                f"FINAL={final_direction}\n"
-                f"BIAS={manual_trade_bias}"
-            )
-            continue
-
-        if comparison_result == "WEAK_JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"] and jarvis_confidence >= 70:
-            alerts.append(
-                f"🧠 JARVIS 단독 강신호\n"
-                f"{pair}\n"
-                f"GPT={gpt_direction} / JARVIS={jarvis_direction} ({jarvis_confidence}%)\n"
-                f"FINAL={final_direction}\n"
-                f"BIAS={manual_trade_bias}"
-            )
-            continue
-
-        if comparison_result == "WEAK_GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
-            alerts.append(
-                f"📌 GPT 우세 신호\n"
-                f"{pair}\n"
-                f"GPT={gpt_direction} / JARVIS={jarvis_direction} ({jarvis_confidence}%)\n"
-                f"FINAL={final_direction}\n"
-                f"BIAS={manual_trade_bias}"
-            )
-            continue
-
-    write_json(ALERT_STATE_FILE, new_state)
-    return alerts
-
-
 def process_cycle(driver, state):
     items = collect_pairs(driver)
-    rows = [safe_build_row(item) for item in items]
+    history = update_xscore_history(items)
+    rows = [safe_build_row(item, history) for item in items]
 
     payload = {
         "updated_at": now_kst_str(),
@@ -720,9 +775,7 @@ def process_cycle(driver, state):
     append_prediction_logs(rows)
 
     basic_alerts = detect_entry_change(rows)
-    ai_alerts = detect_ai_alerts(rows)
-
-    for msg in basic_alerts + ai_alerts:
+    for msg in basic_alerts:
         send_system_alert(msg)
 
     log(f"Cycle Complete: {len(rows)} rows saved.")
