@@ -7,7 +7,7 @@ import json
 import time
 import traceback
 from datetime import datetime, timedelta
-from statistics import mean, pstdev
+from statistics import pstdev
 
 import requests
 from selenium import webdriver
@@ -189,19 +189,17 @@ def moving_toward_center(x_score, slope):
 def calc_status_from_xscore(x_score, slope, volatility):
     """
     플렌X 실제 X-Score 기준 상태 판단
-    - 낮은 점수 = LONG 쪽
-    - 높은 점수 = SHORT 쪽
+    낮은 점수 = LONG 쪽
+    높은 점수 = SHORT 쪽
     """
     if volatility > 12:
         return "WAIT"
 
-    # LONG
     if x_score <= 28:
         if moving_toward_center(x_score, slope):
             return "LONG_ENTRY"
         return "LONG_READY"
 
-    # SHORT
     if x_score >= 72:
         if moving_toward_center(x_score, slope):
             return "SHORT_ENTRY"
@@ -226,14 +224,12 @@ def calc_gpt_direction(status):
 def calc_gpt_xscore_range(x_score, status, slope, volatility):
     x = float(x_score)
 
-    # 변동성 높으면 범위를 넓힌다
     width_bonus = 0
     if volatility >= 8:
         width_bonus = 3
     elif volatility >= 5:
         width_bonus = 1
 
-    # LONG
     if status == "LONG_ENTRY":
         start_x = clamp(round(x - (6 + width_bonus)), 5, 28)
         end_x = clamp(round(x + (12 + width_bonus)), 18, 45)
@@ -248,7 +244,6 @@ def calc_gpt_xscore_range(x_score, status, slope, volatility):
             start_x = max(5, end_x - 5)
         return start_x, end_x
 
-    # SHORT
     if status == "SHORT_ENTRY":
         start_x = clamp(round(x - (12 + width_bonus)), 55, 82)
         end_x = clamp(round(x + (6 + width_bonus)), 72, 95)
@@ -350,26 +345,26 @@ def choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end):
     return "-", "-"
 
 
-def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_start, jarvis_end, comparison):
+def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_start, jarvis_end, comparison, x_score, slope_5):
+    """
+    최종 진입 확정은 더 엄격하게:
+    - FINAL은 AGREE + 중심 회귀 방향일 때만 확정
+    - GPT_ONLY / JARVIS_ONLY는 최종 후보가 아니라 WATCH 처리
+    """
     result = comparison["comparison_result"]
-    bias = comparison["manual_trade_bias"]
 
-    if result == "AGREE":
+    if result == "AGREE" and gpt_direction in ["LONG", "SHORT"] and moving_toward_center(x_score, slope_5):
         final_start, final_end = choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end)
         return gpt_direction, "GPT+JARVIS", final_start, final_end
 
-    # 너무 보수적으로 비우지 말고 단독 후보도 최종값 허용
-    if bias == "GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
-        return gpt_direction, "GPT_ONLY", gpt_start, gpt_end
+    if result == "WEAK_GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
+        return "WATCH", "GPT_ONLY", gpt_start, gpt_end
 
-    if bias == "JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
-        return jarvis_direction, "JARVIS_ONLY", jarvis_start, jarvis_end
+    if result == "WEAK_JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
+        return "WATCH", "JARVIS_ONLY", jarvis_start, jarvis_end
 
-    if bias == "CAUTION":
+    if result == "CONFLICT":
         return "WAIT", "SYSTEM", "-", "-"
-
-    if gpt_direction == "SKIP":
-        return "SKIP", "GPT", "-", "-"
 
     return "WAIT", "SYSTEM", "-", "-"
 
@@ -388,11 +383,10 @@ def build_row(item, history):
     estimated_method = estimated.get("method", "-")
 
     quality = calc_quality(tier, actual_x_score)
-    status = calc_status_from_xscore(actual_x_score, slope_5, volatility_20)
-    decision = "진입강력" if "ENTRY" in status else ("주의관찰" if "READY" in status else "대기")
 
-    gpt_direction = calc_gpt_direction(status)
-    gpt_start, gpt_end = calc_gpt_xscore_range(actual_x_score, status, slope_5, volatility_20)
+    raw_status = calc_status_from_xscore(actual_x_score, slope_5, volatility_20)
+    gpt_direction = calc_gpt_direction(raw_status)
+    gpt_start, gpt_end = calc_gpt_xscore_range(actual_x_score, raw_status, slope_5, volatility_20)
 
     if gpt_direction == "LONG":
         gpt_status = "GPT_LONG"
@@ -407,9 +401,9 @@ def build_row(item, history):
     jarvis_raw = jarvis.self_analyze({
         "pair": pair,
         "x_score": actual_x_score,
-        "status": status,
+        "status": raw_status,
         "quality": quality,
-        "decision": decision
+        "decision": "진입강력" if "ENTRY" in raw_status else ("주의관찰" if "READY" in raw_status else "대기")
     })
 
     jarvis_norm = normalize_jarvis_result(jarvis_raw)
@@ -423,10 +417,27 @@ def build_row(item, history):
     comparison = compare_gpt_vs_jarvis(gpt_direction, jarvis_direction, jarvis_confidence)
 
     final_direction, final_source, final_start, final_end = decide_final(
-        gpt_direction, gpt_start, gpt_end,
-        jarvis_direction, jarvis_start, jarvis_end,
-        comparison
+        gpt_direction,
+        gpt_start,
+        gpt_end,
+        jarvis_direction,
+        jarvis_start,
+        jarvis_end,
+        comparison,
+        actual_x_score,
+        slope_5
     )
+
+    # 진짜 ENTRY 상태는 FINAL이 LONG/SHORT로 확정된 경우만
+    if final_direction == "LONG":
+        status = "LONG_ENTRY"
+        decision = "진입강력"
+    elif final_direction == "SHORT":
+        status = "SHORT_ENTRY"
+        decision = "진입강력"
+    else:
+        status = raw_status
+        decision = "진입강력" if "ENTRY" in raw_status else ("주의관찰" if "READY" in raw_status else "대기")
 
     merged_reason = (
         f"actual_x={actual_x_score}, slope_5={slope_5}, vol_20={volatility_20}\n"
@@ -446,6 +457,7 @@ def build_row(item, history):
         "xscore_gap": round(actual_x_score - estimated_xscore, 2) if isinstance(estimated_xscore, (int, float)) else "-",
 
         "status": status,
+        "raw_status": raw_status,
         "quality": quality,
         "decision": decision,
         "slope_5": slope_5,
@@ -500,6 +512,7 @@ def safe_build_row(item, history):
             "xscore_gap": "-",
 
             "status": "ERROR",
+            "raw_status": "ERROR",
             "quality": 0,
             "decision": "오류",
             "slope_5": 0,
@@ -552,6 +565,7 @@ def append_prediction_logs(rows):
             "estimated_x_score": r.get("estimated_x_score", "-"),
             "xscore_gap": r.get("xscore_gap", "-"),
             "status": r.get("status", ""),
+            "raw_status": r.get("raw_status", ""),
 
             "gpt_direction": r.get("gpt_direction", ""),
             "gpt_start": r.get("gpt_start", "-"),
@@ -732,6 +746,9 @@ def collect_pairs(driver):
 
 
 def detect_entry_change(rows):
+    """
+    텔레그램은 WAIT/SKIP -> LONG_ENTRY/SHORT_ENTRY 로 바뀔 때만.
+    """
     prev = load_json(LAST_STATUS_FILE, {})
     alerts = []
 
@@ -754,7 +771,6 @@ def detect_entry_change(rows):
 
     new_state = {r["pair"]: r["status"] for r in rows}
     write_json(LAST_STATUS_FILE, new_state)
-
     return alerts
 
 
@@ -766,7 +782,7 @@ def process_cycle(driver, state):
     payload = {
         "updated_at": now_kst_str(),
         "count": len(rows),
-        "entry_signals": len([r for r in rows if "ENTRY" in r["status"]]),
+        "entry_signals": len([r for r in rows if r["status"] in ["LONG_ENTRY", "SHORT_ENTRY"]]),
         "rows": rows
     }
 
@@ -802,7 +818,6 @@ def main():
         except Exception as e:
             log(f"Error: {e}")
             traceback.print_exc()
-
             send_system_alert(f"🚨 CRITICAL ERROR\n{str(e)}")
 
             if driver:

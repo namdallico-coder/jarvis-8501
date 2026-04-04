@@ -3,9 +3,11 @@ __pycache__/
 
 alert_state.json
 body_debug.json
+collector_state.json
 dashboard.json
 last_status.json
 parse_debug.json
 prediction_log.json
 signals.json
 update_result.json
+xscore_history.json
