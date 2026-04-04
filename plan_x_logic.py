@@ -18,9 +18,8 @@ class JarvisPlenX:
         self.kline_cache = {}
 
         # 현재 확보된 파라미터 샘플
-        # 형식: "COIN1/COIN2": {"alpha": float, "beta": float}
         self.pair_params = {
-            "DOT/CHZ": {"alpha": 0.0357, "beta": 0.0008},
+            "DOT/CHZ": {"alpha": 0.0357, "beta": 0.00087},
             "THETA/GALA": {"alpha": 0.00005, "beta": 0.0209},
             "FIL/ENJ": {"alpha": -0.0168, "beta": 0.0351},
         }
@@ -199,8 +198,8 @@ class JarvisPlenX:
         """
         플렌X 추정 X-Score:
         score = 50 + (z_score * 15.05)
-        - 50 아래: LONG 쪽
-        - 50 위: SHORT 쪽
+        50 아래 = LONG 쪽
+        50 위 = SHORT 쪽
         """
         if "/" not in pair_name:
             return {
@@ -266,13 +265,14 @@ class JarvisPlenX:
                 "z_score": 0.0,
                 "spread": spreads[-1],
                 "spread_std": spread_std,
-                "method": "zero_std"
+                "method": "zero_std",
+                "alpha": alpha,
+                "beta": beta
             }
 
         current_spread = spreads[-1]
         z_score = (current_spread - spread_mean) / spread_std
 
-        # 플렌X 화면 행동(낮으면 LONG / 높으면 SHORT)에 맞춘 0~100 스케일
         x_score = 50.0 + (z_score * 15.05)
         x_score = self._clamp(x_score, 0.0, 100.0)
 
@@ -371,7 +371,6 @@ class JarvisPlenX:
         left_score, right_score = self.score_direction(market)
         reason = self.build_reason(market, left_score, right_score)
 
-        # 변동성 너무 높으면 보수적
         if left["volatility_5m"] > 0.03 or right["volatility_5m"] > 0.03:
             return {
                 "jarvis_status": "WAIT",
@@ -380,7 +379,6 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        # LONG 쪽: 낮은 X-Score + 좌측 코인 반등 여지
         if actual_x_score <= 35 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
             if left_score >= 3 and left["pressure"] < 1.0 and left["trend_5m"] >= -0.5:
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
@@ -391,7 +389,6 @@ class JarvisPlenX:
                     "jarvis_end": end_x
                 }
 
-        # SHORT 쪽: 높은 X-Score + 좌측 코인 약세
         if actual_x_score >= 65 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
             if right_score >= 3 and left["pressure"] > 1.0 and left["trend_5m"] <= 0.5:
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
