@@ -58,6 +58,8 @@
         }
         .btn-dark {
             background: #475569;
+            text-decoration: none;
+            display: inline-block;
         }
         .search-box {
             padding: 10px 12px;
@@ -343,10 +345,31 @@
                             <a class="btn btn-dark" href="/download_backup/{{ item.filename }}">다운로드</a>
                         </td>
                         <td>
-                            <form action="/restore_backup" method="post" onsubmit="return confirm('정말 이 백업으로 롤백하시겠습니까?');">
-                                <input type="hidden" name="filename" value="{{ item.filename }}">
-                                <button class="btn btn-danger" type="submit">롤백</button>
-                            </form>
+                            <div class="backup-actions">
+                                <form action="/restore_backup" method="post" onsubmit="return confirm('GPT만 롤백하시겠습니까?');">
+                                    <input type="hidden" name="filename" value="{{ item.filename }}">
+                                    <input type="hidden" name="mode" value="gpt">
+                                    <button class="btn" type="submit">GPT</button>
+                                </form>
+
+                                <form action="/restore_backup" method="post" onsubmit="return confirm('JARVIS만 롤백하시겠습니까?');">
+                                    <input type="hidden" name="filename" value="{{ item.filename }}">
+                                    <input type="hidden" name="mode" value="jarvis">
+                                    <button class="btn" type="submit">JARVIS</button>
+                                </form>
+
+                                <form action="/restore_backup" method="post" onsubmit="return confirm('WEB만 롤백하시겠습니까?');">
+                                    <input type="hidden" name="filename" value="{{ item.filename }}">
+                                    <input type="hidden" name="mode" value="web">
+                                    <button class="btn" type="submit">WEB</button>
+                                </form>
+
+                                <form action="/restore_backup" method="post" onsubmit="return confirm('전체 롤백하시겠습니까?');">
+                                    <input type="hidden" name="filename" value="{{ item.filename }}">
+                                    <input type="hidden" name="mode" value="all">
+                                    <button class="btn btn-danger" type="submit">ALL</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
