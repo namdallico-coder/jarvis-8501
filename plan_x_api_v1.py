@@ -11,8 +11,8 @@ import requests
 from fastapi import FastAPI, Query
 
 BASE_DIR = "/home/ubuntu/jarvis-field/8501"
-PROJECT_ROOT = "/home/ubuntu/jarvis-field"
-BACKUP_DIR = "/home/ubuntu/backups"
+PROJECT_PARENT_DIR = "/home/ubuntu/jarvis-field"
+BACKUP_DIR = "/home/ubuntu/jarvis-field/8501/backups"
 
 UPDATE_RESULT_FILE = f"{BASE_DIR}/update_result.json"
 BACKUP_RESULT_FILE = f"{BASE_DIR}/backup_result.json"
@@ -21,8 +21,8 @@ ENGINE_SERVICE = "jarvis-8501.service"
 WEB_SERVICE = "jarvis-8501-web.service"
 API_SERVICE = "jarvis-8501-api.service"
 
-TELEGRAM_TOKEN = "여기에_텔레그램_토큰"
-TELEGRAM_CHAT_ID = "여기에_텔레그램_채팅ID"
+TELEGRAM_TOKEN = "8746898502:AAHqiBZEcec5guPwFTeJG6xZOq9J87KUP58"
+TELEGRAM_CHAT_ID = "8462590648"
 
 app = FastAPI(title="JARVIS 8501 API")
 
@@ -350,11 +350,10 @@ def create_backup():
         "tar",
         "-czf",
         full_path,
-        "jarvis-field"
+        "8501"
     ]
 
-    result = run_cmd(cmd, timeout=300, cwd="/home/ubuntu")
-
+    result = run_cmd(cmd, timeout=300, cwd=PROJECT_PARENT_DIR)
     backup_state = read_backup_result()
 
     if result["ok"]:
@@ -395,7 +394,7 @@ def create_backup():
     }
 
 
-def restore_backup(filename):
+def restore_backup(filename, mode="all"):
     ensure_backup_dir()
 
     safe_name = os.path.basename(filename)
@@ -423,62 +422,94 @@ def restore_backup(filename):
             "api_restart": {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
         }
 
-    cmd = [
-        "tar",
-        "-xzf",
-        full_path,
-        "-C",
-        "/home/ubuntu"
-    ]
+    temp_dir = f"/home/ubuntu/temp_restore_{datetime.now().strftime('%H%M%S')}"
+    os.makedirs(temp_dir, exist_ok=True)
 
-    result = run_cmd(cmd, timeout=300, cwd="/home/ubuntu")
+    extract_result = run_cmd(["tar", "-xzf", full_path, "-C", temp_dir], timeout=300)
+    if not extract_result["ok"]:
+        backup_state["last_restore"] = {
+            "status": "ERROR",
+            "filename": safe_name,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error": extract_result["stderr"] or "extract failed"
+        }
+        write_backup_result(backup_state)
+
+        return {
+            "status": "ERROR",
+            "filename": safe_name,
+            "time": backup_state["last_restore"]["time"],
+            "output": extract_result["stdout"],
+            "error": backup_state["last_restore"]["error"],
+            "engine_restart": {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""},
+            "web_restart": {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""},
+            "api_restart": {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
+        }
+
+    base = f"{temp_dir}/8501"
 
     engine_restart = {"service": ENGINE_SERVICE, "status": "SKIPPED", "error": ""}
     web_restart = {"service": WEB_SERVICE, "status": "SKIPPED", "error": ""}
     api_restart = {"service": API_SERVICE, "status": "SKIPPED", "error": ""}
 
-    if result["ok"]:
-        engine_restart = schedule_restart(ENGINE_SERVICE)
-        web_restart = schedule_restart(WEB_SERVICE)
+    try:
+        if mode == "gpt":
+            shutil.copy(f"{base}/plan_x_engine.py", f"{BASE_DIR}/plan_x_engine.py")
+            engine_restart = schedule_restart(ENGINE_SERVICE)
+
+        elif mode == "jarvis":
+            shutil.copy(f"{base}/plan_x_logic.py", f"{BASE_DIR}/plan_x_logic.py")
+            engine_restart = schedule_restart(ENGINE_SERVICE)
+
+        elif mode == "web":
+            shutil.copy(f"{base}/plan_x_dashboard.py", f"{BASE_DIR}/plan_x_dashboard.py")
+            shutil.copy(f"{base}/templates/plan_x_index.html", f"{BASE_DIR}/templates/plan_x_index.html")
+            web_restart = schedule_restart(WEB_SERVICE)
+
+        else:
+            run_cmd(["cp", "-r", base + "/.", BASE_DIR], timeout=300)
+            engine_restart = schedule_restart(ENGINE_SERVICE)
+            web_restart = schedule_restart(WEB_SERVICE)
+
         api_restart = schedule_restart(API_SERVICE)
 
+    except Exception as e:
         backup_state["last_restore"] = {
-            "status": "SUCCESS",
+            "status": "ERROR",
             "filename": safe_name,
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "error": ""
+            "error": str(e)
         }
         write_backup_result(backup_state)
 
-        send_telegram(f"✅ 롤백 완료\n{safe_name}")
-
         return {
-            "status": "SUCCESS",
+            "status": "ERROR",
             "filename": safe_name,
             "time": backup_state["last_restore"]["time"],
-            "output": result["stdout"] or "restore complete",
-            "error": "",
+            "output": "",
+            "error": str(e),
             "engine_restart": engine_restart,
             "web_restart": web_restart,
             "api_restart": api_restart
         }
 
     backup_state["last_restore"] = {
-        "status": "ERROR",
+        "status": "SUCCESS",
         "filename": safe_name,
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "error": result["stderr"] or "restore failed"
+        "error": ""
     }
     write_backup_result(backup_state)
 
-    send_telegram(f"❌ 롤백 실패\n{safe_name}\n{backup_state['last_restore']['error']}")
+    send_telegram(f"✅ 롤백 완료\n{safe_name}\nmode={mode}")
 
     return {
-        "status": "ERROR",
+        "status": "SUCCESS",
         "filename": safe_name,
+        "mode": mode,
         "time": backup_state["last_restore"]["time"],
-        "output": result["stdout"],
-        "error": backup_state["last_restore"]["error"],
+        "output": "restore complete",
+        "error": "",
         "engine_restart": engine_restart,
         "web_restart": web_restart,
         "api_restart": api_restart
@@ -531,5 +562,8 @@ def create_backup_api():
 
 
 @app.get("/restore_backup")
-def restore_backup_api(filename: str = Query(...)):
-    return restore_backup(filename)
+def restore_backup_api(
+    filename: str = Query(...),
+    mode: str = Query("all")
+):
+    return restore_backup(filename, mode)
