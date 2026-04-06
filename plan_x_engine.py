@@ -5,16 +5,13 @@ import os
 import re
 import json
 import time
+import asyncio
 import traceback
 from datetime import datetime, timedelta
 from statistics import pstdev
 
 import requests
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 from plan_x_logic import JarvisPlenX
 
@@ -25,9 +22,6 @@ DASHBOARD_FILE = os.path.join(BASE_DIR, "dashboard.json")
 LAST_STATUS_FILE = os.path.join(BASE_DIR, "last_status.json")
 PREDICTION_LOG_FILE = os.path.join(BASE_DIR, "prediction_log.json")
 XSCORE_HISTORY_FILE = os.path.join(BASE_DIR, "xscore_history.json")
-
-CHROMEDRIVER_PATH = "/snap/bin/chromium.chromedriver"
-CHROMIUM_BINARY = "/usr/bin/chromium-browser"
 
 PLENX_LOGIN_URL = os.getenv("PLENX_LOGIN_URL", "https://v2.plenx.io/login")
 PLENX_DASHBOARD_URL = os.getenv("PLENX_DASHBOARD_URL", "https://v2.plenx.io/dashboard/binance")
@@ -348,13 +342,17 @@ def decide_final(gpt_direction, gpt_start, gpt_end, jarvis_direction, jarvis_sta
         return gpt_direction, "GPT+JARVIS", final_start, final_end
 
     if result == "WEAK_GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
-        if gpt_direction == "LONG" and x_score <= 35:
-            return gpt_direction, "GPT_EXTREME", gpt_start, gpt_end
-        if gpt_direction == "SHORT" and x_score >= 65:
-            return gpt_direction, "GPT_EXTREME", gpt_start, gpt_end
+        if gpt_direction == "LONG" and (x_score <= 35 or slope_5 > 0.8):
+            return gpt_direction, "GPT_EARLY", gpt_start, gpt_end
+        if gpt_direction == "SHORT" and (x_score >= 65 or slope_5 < -0.8):
+            return gpt_direction, "GPT_EARLY", gpt_start, gpt_end
         return "WATCH", "GPT_ONLY", gpt_start, gpt_end
 
     if result == "WEAK_JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
+        if jarvis_direction == "LONG" and slope_5 > 1.0:
+            return "LONG", "JARVIS_EARLY", jarvis_start, jarvis_end
+        if jarvis_direction == "SHORT" and slope_5 < -1.0:
+            return "SHORT", "JARVIS_EARLY", jarvis_start, jarvis_end
         return "WATCH", "JARVIS_ONLY", jarvis_start, jarvis_end
 
     if result == "CONFLICT":
@@ -586,52 +584,53 @@ def append_prediction_logs(rows):
     write_json(PREDICTION_LOG_FILE, logs)
 
 
-def build_driver():
-    options = Options()
-    options.binary_location = CHROMIUM_BINARY
+async def build_browser():
+    pw = await async_playwright().start()
+    browser = await pw.chromium.launch(
+        headless=HEADLESS,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+            "--ignore-certificate-errors",
+            "--ignore-ssl-errors",
+            "--allow-insecure-localhost",
+            "--allow-running-insecure-content",
+        ],
+    )
 
-    if HEADLESS:
-        options.add_argument("--headless=new")
-
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,2400")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--remote-allow-origins=*")
-    options.add_argument("--ignore-certificate-errors")
-    options.add_argument("--ignore-ssl-errors")
-    options.add_argument("--allow-insecure-localhost")
-    options.add_argument("--allow-running-insecure-content")
-    options.add_argument("--single-process")
-    options.add_argument("--no-zygote")
-
-    service = Service(CHROMEDRIVER_PATH)
-    driver = webdriver.Chrome(service=service, options=options)
-    driver.set_page_load_timeout(40)
-    return driver
+    context = await browser.new_context(
+        viewport={"width": 1920, "height": 2400},
+        ignore_https_errors=True,
+    )
+    page = await context.new_page()
+    page.set_default_timeout(WAIT_TIMEOUT * 1000)
+    return pw, browser, context, page
 
 
-def first_visible(driver, selectors, timeout=WAIT_TIMEOUT):
-    end_at = time.time() + timeout
+async def wait_visible_any(page, selectors, timeout_ms=15000):
+    end_at = time.time() + (timeout_ms / 1000.0)
+
     while time.time() < end_at:
         for sel in selectors:
             try:
-                els = driver.find_elements(By.CSS_SELECTOR, sel)
-                for el in els:
-                    if el.is_displayed():
-                        return el
+                locator = page.locator(sel)
+                count = await locator.count()
+                if count > 0 and await locator.first.is_visible():
+                    return locator.first
             except Exception:
                 pass
-        time.sleep(0.5)
+        await asyncio.sleep(0.5)
+
     return None
 
 
-def plenx_login(driver):
+async def plenx_login(page):
     log("[BOOT] login start")
-    driver.get(PLENX_LOGIN_URL)
-    time.sleep(5)
+    await page.goto(PLENX_LOGIN_URL, wait_until="domcontentloaded")
+    await page.wait_for_timeout(5000)
 
     email_selectors = [
         "input[type='email']",
@@ -648,52 +647,61 @@ def plenx_login(driver):
         "input[placeholder*='password']",
     ]
 
-    email_el = first_visible(driver, email_selectors, timeout=15)
-    pw_el = first_visible(driver, pw_selectors, timeout=15)
+    email_el = await wait_visible_any(page, email_selectors, timeout_ms=15000)
+    pw_el = await wait_visible_any(page, pw_selectors, timeout_ms=15000)
 
     if not email_el or not pw_el:
         raise RuntimeError("로그인 입력창을 찾지 못했습니다.")
 
-    email_el.clear()
-    email_el.send_keys(PLENX_EMAIL)
-    time.sleep(1)
+    await email_el.fill(PLENX_EMAIL)
+    await page.wait_for_timeout(1000)
 
-    pw_el.clear()
-    pw_el.send_keys(PLENX_PASSWORD)
-    time.sleep(1)
+    await pw_el.fill(PLENX_PASSWORD)
+    await page.wait_for_timeout(1000)
 
     clicked = False
-    button_candidates = driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], div[role='button']")
-    for btn in button_candidates:
-        try:
-            txt = ((btn.text or "") + " " + str(btn.get_attribute("value") or "")).strip().lower()
+    try:
+        buttons = page.locator("button, input[type='submit'], div[role='button']")
+        count = await buttons.count()
+
+        for i in range(count):
+            btn = buttons.nth(i)
+            txt = ""
+            try:
+                txt = ((await btn.inner_text(timeout=500) or "") + " " + str(await btn.get_attribute("value") or "")).strip().lower()
+            except Exception:
+                try:
+                    txt = str(await btn.get_attribute("value") or "").strip().lower()
+                except Exception:
+                    txt = ""
+
             if any(x in txt for x in ["login", "log in", "sign in", "signin", "continue"]):
-                driver.execute_script("arguments[0].click();", btn)
+                await btn.click()
                 clicked = True
                 break
-        except Exception:
-            continue
-
-    if not clicked:
-        pw_el.send_keys(Keys.ENTER)
-
-    time.sleep(8)
-    log("[BOOT] login success")
-
-
-def collect_pairs(driver):
-    driver.get(PLENX_DASHBOARD_URL)
-    time.sleep(12)
-
-    try:
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(3)
-        driver.execute_script("window.scrollTo(0, 0)")
-        time.sleep(2)
     except Exception:
         pass
 
-    body_text = driver.execute_script("return document.body ? document.body.innerText : ''")
+    if not clicked:
+        await pw_el.press("Enter")
+
+    await page.wait_for_timeout(8000)
+    log("[BOOT] login success")
+
+
+async def collect_pairs(page):
+    await page.goto(PLENX_DASHBOARD_URL, wait_until="domcontentloaded")
+    await page.wait_for_timeout(12000)
+
+    try:
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(3000)
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(2000)
+    except Exception:
+        pass
+
+    body_text = await page.locator("body").inner_text()
     lines = [line.strip() for line in body_text.splitlines() if line.strip()]
 
     results = []
@@ -734,6 +742,9 @@ def collect_pairs(driver):
 
         i += 1
 
+    if not results:
+        raise RuntimeError("PLENX_XSCORE_PARSE_EMPTY")
+
     log(f"[PLENX] parsed rows: {len(results)}")
     return results
 
@@ -756,16 +767,30 @@ def detect_entry_change(rows):
             prev_final_direction = ""
             prev_final_source = ""
 
-        is_current_entry = final_direction in ["LONG", "SHORT"] and final_source in ["GPT+JARVIS", "GPT_EXTREME"]
-        was_prev_entry = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in ["GPT+JARVIS", "GPT_EXTREME"]
+        is_current_entry = final_direction in ["LONG", "SHORT"] and final_source in [
+            "GPT+JARVIS",
+            "GPT_EXTREME",
+            "GPT_EARLY",
+            "JARVIS_EARLY"
+        ]
+        was_prev_entry = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in [
+            "GPT+JARVIS",
+            "GPT_EXTREME",
+            "GPT_EARLY",
+            "JARVIS_EARLY"
+        ]
 
         extreme_ok = (
             (final_direction == "LONG" and x_score <= 35) or
             (final_direction == "SHORT" and x_score >= 65)
         )
 
+        early_ok = (
+            final_source in ["GPT_EARLY", "JARVIS_EARLY"]
+        )
+
         if is_current_entry and not was_prev_entry:
-            if final_source == "GPT+JARVIS" or (final_source == "GPT_EXTREME" and extreme_ok):
+            if final_source == "GPT+JARVIS" or (final_source == "GPT_EXTREME" and extreme_ok) or early_ok:
                 alerts.append(
                     f"🚨 ENTRY 전환 발생\n"
                     f"{pair}\n"
@@ -787,8 +812,8 @@ def detect_entry_change(rows):
     return alerts
 
 
-def process_cycle(driver, state):
-    items = collect_pairs(driver)
+async def process_cycle(page, state):
+    items = await collect_pairs(page)
     history = update_xscore_history(items)
     rows = [safe_build_row(item, history) for item in items]
 
@@ -810,19 +835,42 @@ def process_cycle(driver, state):
     log(f"Cycle Complete: {len(rows)} rows saved.")
 
 
-def main():
+async def close_browser(pw, browser, context):
+    try:
+        if context:
+            await context.close()
+    except Exception:
+        pass
+
+    try:
+        if browser:
+            await browser.close()
+    except Exception:
+        pass
+
+    try:
+        if pw:
+            await pw.stop()
+    except Exception:
+        pass
+
+
+async def async_main():
     ensure_dir()
     state = load_json(STATE_FILE, {})
-    driver = None
+    pw = None
+    browser = None
+    context = None
+    page = None
     last_heartbeat = 0
 
     while True:
         try:
-            if driver is None:
-                driver = build_driver()
-                plenx_login(driver)
+            if page is None:
+                pw, browser, context, page = await build_browser()
+                await plenx_login(page)
 
-            process_cycle(driver, state)
+            await process_cycle(page, state)
 
             if time.time() - last_heartbeat > 3600:
                 send_system_alert("✅ SYSTEM OK - 정상 동작 중")
@@ -833,14 +881,17 @@ def main():
             traceback.print_exc()
             send_system_alert(f"🚨 CRITICAL ERROR\n{str(e)}")
 
-            if driver:
-                try:
-                    driver.quit()
-                except Exception:
-                    pass
-            driver = None
+            await close_browser(pw, browser, context)
+            pw = None
+            browser = None
+            context = None
+            page = None
 
-        time.sleep(COLLECT_INTERVAL)
+        await asyncio.sleep(COLLECT_INTERVAL)
+
+
+def main():
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":

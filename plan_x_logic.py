@@ -17,7 +17,6 @@ class JarvisPlenX:
         self.price_cache = {}
         self.kline_cache = {}
 
-        # 현재 확보된 파라미터 샘플
         self.pair_params = {
             "DOT/CHZ": {"alpha": 0.0357, "beta": 0.00087},
             "THETA/GALA": {"alpha": 0.00005, "beta": 0.0209},
@@ -195,12 +194,6 @@ class JarvisPlenX:
             }
 
     def estimate_planx_xscore(self, pair_name):
-        """
-        플렌X 추정 X-Score:
-        score = 50 + (z_score * 15.05)
-        50 아래 = LONG 쪽
-        50 위 = SHORT 쪽
-        """
         if "/" not in pair_name:
             return {
                 "estimated_xscore": None,
@@ -329,26 +322,26 @@ class JarvisPlenX:
         )
 
     def _long_range(self, x_score, left_score, pressure):
-        start_x = self._clamp(self._round_x(x_score - 5), 5, 30)
-        end_x = self._clamp(self._round_x(x_score + 10), 18, 45)
+        start_x = self._clamp(self._round_x(x_score - 6), 5, 32)
+        end_x = self._clamp(self._round_x(x_score + 12), 18, 48)
 
-        if left_score >= 2 and pressure < 1.10:
-            end_x = self._clamp(end_x + 3, 18, 45)
+        if left_score >= 2 and pressure < 1.15:
+            end_x = self._clamp(end_x + 4, 18, 50)
 
         if start_x >= end_x:
-            start_x = max(5, end_x - 6)
+            start_x = max(5, end_x - 7)
 
         return start_x, end_x
 
     def _short_range(self, x_score, right_score, pressure):
-        start_x = self._clamp(self._round_x(x_score - 10), 55, 82)
-        end_x = self._clamp(self._round_x(x_score + 5), 70, 95)
+        start_x = self._clamp(self._round_x(x_score - 12), 50, 84)
+        end_x = self._clamp(self._round_x(x_score + 6), 70, 95)
 
-        if right_score >= 2 and pressure > 0.90:
-            start_x = self._clamp(start_x - 3, 55, 82)
+        if right_score >= 2 and pressure > 0.85:
+            start_x = self._clamp(start_x - 4, 48, 84)
 
         if start_x >= end_x:
-            start_x = max(55, end_x - 6)
+            start_x = max(48, end_x - 7)
 
         return start_x, end_x
 
@@ -371,7 +364,7 @@ class JarvisPlenX:
         left_score, right_score = self.score_direction(market)
         reason = self.build_reason(market, left_score, right_score)
 
-        if left["volatility_5m"] > 0.05 or right["volatility_5m"] > 0.05:
+        if left["volatility_5m"] > 0.06 or right["volatility_5m"] > 0.06:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"단기 변동성 과도 | {reason}",
@@ -379,8 +372,8 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        if actual_x_score <= 42 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
-            if left_score >= 2 and left["pressure"] < 1.10 and left["trend_5m"] >= -1.5:
+        if actual_x_score <= 44 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
+            if left_score >= 2 and left["pressure"] < 1.15 and left["trend_5m"] >= -1.8:
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
                 return {
                     "jarvis_status": "LONG",
@@ -389,8 +382,8 @@ class JarvisPlenX:
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score >= 58 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
-            if right_score >= 2 and left["pressure"] > 0.90 and left["trend_5m"] <= 1.5:
+        if actual_x_score >= 56 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
+            if right_score >= 2 and left["pressure"] > 0.75 and left["trend_5m"] <= 2.5:
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
                 return {
                     "jarvis_status": "SHORT",
@@ -399,7 +392,7 @@ class JarvisPlenX:
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score <= 42:
+        if actual_x_score <= 44:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"LONG 후보지만 보수적 대기 | {reason}",
@@ -407,7 +400,7 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        if actual_x_score >= 58:
+        if actual_x_score >= 56:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"SHORT 후보지만 보수적 대기 | {reason}",
