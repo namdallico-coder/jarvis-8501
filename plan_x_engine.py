@@ -49,6 +49,22 @@ def now_kst_str():
     return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def get_next_heartbeat_kst(current_time=None):
+    now_dt = current_time or now_kst()
+
+    today_0900 = now_dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    today_2100 = now_dt.replace(hour=21, minute=0, second=0, microsecond=0)
+
+    if now_dt < today_0900:
+        return today_0900
+
+    if now_dt < today_2100:
+        return today_2100
+
+    tomorrow = now_dt + timedelta(days=1)
+    return tomorrow.replace(hour=9, minute=0, second=0, microsecond=0)
+
+
 def log(msg):
     print(f"{now_kst_str()} {msg}", flush=True)
 
@@ -862,7 +878,7 @@ async def async_main():
     browser = None
     context = None
     page = None
-    last_heartbeat = 0
+    next_heartbeat_at = get_next_heartbeat_kst()
 
     while True:
         try:
@@ -872,9 +888,10 @@ async def async_main():
 
             await process_cycle(page, state)
 
-            if time.time() - last_heartbeat > 3600:
-                send_system_alert("✅ SYSTEM OK - 정상 동작 중")
-                last_heartbeat = time.time()
+            current_kst = now_kst()
+            if current_kst >= next_heartbeat_at:
+                send_system_alert(f"✅ SYSTEM OK - 정상 동작 중 ({current_kst.strftime('%Y-%m-%d %H:%M:%S')} KST)")
+                next_heartbeat_at = get_next_heartbeat_kst(current_kst + timedelta(seconds=1))
 
         except Exception as e:
             log(f"Error: {e}")
