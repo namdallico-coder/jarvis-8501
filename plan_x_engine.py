@@ -37,6 +37,7 @@ PAIR_LIMIT = 24
 HEADLESS = True
 MAX_LOG_ROWS = 5000
 MAX_HISTORY_PER_PAIR = 240
+HEARTBEAT_HOURS = 12
 
 jarvis = JarvisPlenX()
 
@@ -51,18 +52,7 @@ def now_kst_str():
 
 def get_next_heartbeat_kst(current_time=None):
     now_dt = current_time or now_kst()
-
-    today_0900 = now_dt.replace(hour=9, minute=0, second=0, microsecond=0)
-    today_2100 = now_dt.replace(hour=21, minute=0, second=0, microsecond=0)
-
-    if now_dt < today_0900:
-        return today_0900
-
-    if now_dt < today_2100:
-        return today_2100
-
-    tomorrow = now_dt + timedelta(days=1)
-    return tomorrow.replace(hour=9, minute=0, second=0, microsecond=0)
+    return now_dt + timedelta(hours=HEARTBEAT_HOURS)
 
 
 def log(msg):
@@ -983,29 +973,29 @@ def detect_entry_change(rows):
     prev = load_json(LAST_STATUS_FILE, {})
     alerts = []
 
+    valid_entry_sources = ["GPT+JARVIS+PREDICT", "GPT_PREDICT"]
+
     for r in rows:
         pair = r["pair"]
+        current_status = str(r.get("status", "")).strip().upper()
         final_direction = str(r.get("final_direction", "")).strip().upper()
         final_source = str(r.get("final_source", "")).strip().upper()
 
         prev_data = prev.get(pair, {})
         if isinstance(prev_data, dict):
+            prev_status = str(prev_data.get("status", "")).strip().upper()
             prev_final_direction = str(prev_data.get("final_direction", "")).strip().upper()
             prev_final_source = str(prev_data.get("final_source", "")).strip().upper()
         else:
+            prev_status = ""
             prev_final_direction = ""
             prev_final_source = ""
 
-        is_current_entry = final_direction in ["LONG", "SHORT"] and final_source in [
-            "GPT+JARVIS+PREDICT",
-            "GPT_PREDICT"
-        ]
-        was_prev_entry = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in [
-            "GPT+JARVIS+PREDICT",
-            "GPT_PREDICT"
-        ]
+        was_wait_or_ready = prev_status in ["WAIT", "LONG_READY", "SHORT_READY", ""]
+        is_entry_now = current_status in ["LONG_ENTRY", "SHORT_ENTRY"] and final_direction in ["LONG", "SHORT"] and final_source in valid_entry_sources
+        was_entry_before = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in valid_entry_sources
 
-        if is_current_entry and not was_prev_entry:
+        if was_wait_or_ready and is_entry_now and not was_entry_before:
             alerts.append(
                 f"🚨 ENTRY 전환 발생\n"
                 f"{pair}\n"
@@ -1018,19 +1008,9 @@ def detect_entry_change(rows):
                 f"FINAL_X={r.get('final_start', '-')}/{r.get('final_end', '-')}"
             )
 
-        if final_direction == "EXIT":
-            alerts.append(
-                f"🛑 EXIT 발생\n"
-                f"{pair}\n"
-                f"사유={final_source}\n"
-                f"플렌X={r.get('x_score', '-')}\n"
-                f"PREDICT={r.get('predict_direction', '-')}, rev={r.get('reversion_prob', '-')}, risk={r.get('trend_risk', '-')}\n"
-                f"LEADER={r.get('left_leader', '-')}/{r.get('right_leader', '-')} ({r.get('leader_match_prob', '-')})\n"
-                f"BTC={r.get('btc_regime', '-')}/{r.get('btc_bias', '-')}"
-            )
-
     new_state = {
         r["pair"]: {
+            "status": str(r.get("status", "")).strip().upper(),
             "final_direction": str(r.get("final_direction", "")).strip().upper(),
             "final_source": str(r.get("final_source", "")).strip().upper()
         }
