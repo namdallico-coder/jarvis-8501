@@ -212,6 +212,12 @@
                 <th>비교</th>
                 <th>FINAL</th>
                 <th>FINAL 시작/종료</th>
+                <th>PREDICT</th>
+                <th>회귀확률</th>
+                <th>추세리스크</th>
+                <th>LEADER</th>
+                <th>LEADER 매칭</th>
+                <th>추천 손절</th>
             </tr>
         </thead>
         <tbody>
@@ -237,10 +243,38 @@
                 </td>
                 <td>
                     {% set fd = row.final_direction %}
-                    <span class="tag {% if fd == 'LONG' %}long{% elif fd == 'SHORT' %}short{% elif fd == 'WATCH' %}watch{% elif fd == 'SKIP' %}skip{% else %}wait{% endif %}">{{ fd }}</span>
+                    <span class="tag {% if fd == 'LONG' %}long{% elif fd == 'SHORT' %}short{% elif fd == 'WATCH' %}watch{% elif fd == 'SKIP' %}skip{% elif fd == 'EXIT' %}conflict{% else %}wait{% endif %}">{{ fd }}</span>
                     <div class="small">{{ row.final_source }}</div>
                 </td>
                 <td><div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div></td>
+                <td>
+                    {% set pd = row.predict_direction %}
+                    <span class="tag {% if pd == 'LONG' %}long{% elif pd == 'SHORT' %}short{% else %}wait{% endif %}">{{ pd }}</span>
+                    <div class="small">{{ row.entry_filter }}</div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.reversion_prob }}%</div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.trend_risk }}%</div>
+                    <div class="small">{{ row.btc_regime }}/{{ row.btc_bias }}</div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.left_leader }} / {{ row.right_leader }}</div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.leader_match_prob }}%</div>
+                    <div class="small">
+                        {% if row.same_leader %}
+                            SAME
+                        {% else %}
+                            DIFF
+                        {% endif %}
+                    </div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.auto_stop_loss }}%</div>
+                </td>
             </tr>
         {% endfor %}
         </tbody>
