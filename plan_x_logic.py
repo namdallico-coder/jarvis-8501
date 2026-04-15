@@ -146,6 +146,103 @@ class JarvisPlenX:
         volatility = pstdev(returns) if len(returns) >= 2 else 0.0
         return trend_pct, volatility
 
+    def get_returns(self, symbol, interval="5m", limit=120):
+        closes = self.get_closes(symbol, interval=interval, limit=limit)
+        returns = []
+
+        if not closes or len(closes) < 3:
+            return returns
+
+        for i in range(1, len(closes)):
+            prev_price = self._safe_float(closes[i - 1])
+            curr_price = self._safe_float(closes[i])
+            if prev_price > 0:
+                returns.append((curr_price - prev_price) / prev_price)
+
+        return returns
+
+    def calc_corr(self, arr1, arr2):
+        n = min(len(arr1), len(arr2))
+        if n < 10:
+            return 0.0
+
+        x = arr1[-n:]
+        y = arr2[-n:]
+
+        mx = mean(x)
+        my = mean(y)
+
+        num = 0.0
+        dx = 0.0
+        dy = 0.0
+
+        for a, b in zip(x, y):
+            xa = a - mx
+            yb = b - my
+            num += xa * yb
+            dx += xa * xa
+            dy += yb * yb
+
+        if dx <= 0 or dy <= 0:
+            return 0.0
+
+        return num / math.sqrt(dx * dy)
+
+    def detect_leader_coin(self, coin_name):
+        symbol = self._symbol(coin_name)
+
+        coin_ret = self.get_returns(symbol, interval="5m", limit=120)
+        btc_ret = self.get_returns("BTCUSDT", interval="5m", limit=120)
+        eth_ret = self.get_returns("ETHUSDT", interval="5m", limit=120)
+
+        corr_btc = abs(self.calc_corr(coin_ret, btc_ret))
+        corr_eth = abs(self.calc_corr(coin_ret, eth_ret))
+
+        if corr_btc >= corr_eth:
+            leader = "BTC"
+            leader_corr = corr_btc
+        else:
+            leader = "ETH"
+            leader_corr = corr_eth
+
+        return {
+            "leader_coin": leader,
+            "leader_corr": round(leader_corr, 4),
+            "corr_btc": round(corr_btc, 4),
+            "corr_eth": round(corr_eth, 4)
+        }
+
+    def get_pair_leader_filter(self, pair_name):
+        if "/" not in pair_name:
+            return {
+                "left_leader": "UNKNOWN",
+                "right_leader": "UNKNOWN",
+                "left_corr": 0.0,
+                "right_corr": 0.0,
+                "same_leader": False,
+                "leader_match_prob": 0
+            }
+
+        left_coin, right_coin = pair_name.split("/")
+        left_coin = left_coin.strip().upper()
+        right_coin = right_coin.strip().upper()
+
+        left_leader = self.detect_leader_coin(left_coin)
+        right_leader = self.detect_leader_coin(right_coin)
+
+        same_leader = left_leader["leader_coin"] == right_leader["leader_coin"]
+        avg_corr = (left_leader["leader_corr"] + right_leader["leader_corr"]) / 2.0
+        leader_match_prob = int(self._clamp(round(avg_corr * 100), 0, 100))
+
+        return {
+            "left_leader": left_leader["leader_coin"],
+            "right_leader": right_leader["leader_coin"],
+            "left_corr": left_leader["leader_corr"],
+            "right_corr": right_leader["leader_corr"],
+            "same_leader": same_leader,
+            "leader_match_prob": leader_match_prob
+        }
+
     def get_coin_snapshot(self, coin_name):
         symbol = self._symbol(coin_name)
 
@@ -321,27 +418,196 @@ class JarvisPlenX:
             f"pressure={right['pressure']:.2f}"
         )
 
-    def _long_range(self, x_score, left_score, pressure):
-        start_x = self._clamp(self._round_x(x_score - 6), 5, 32)
-        end_x = self._clamp(self._round_x(x_score + 12), 18, 48)
+    def get_btc_market_filter(self):
+        btc = self.get_coin_snapshot("BTC")
 
-        if left_score >= 2 and pressure < 1.15:
-            end_x = self._clamp(end_x + 4, 18, 50)
+        trend_5m = btc["trend_5m"]
+        trend_15m = btc["trend_15m"]
+        trend_1h = btc["trend_1h"]
+        vol_5m = btc["volatility_5m"]
+
+        regime = "NEUTRAL"
+        bias = "NONE"
+        risk = 30
+
+        if trend_5m >= 0.9 and trend_15m >= 1.5 and trend_1h >= 2.5:
+            regime = "TREND_UP"
+            bias = "LONG"
+            risk = 80
+        elif trend_5m <= -0.9 and trend_15m <= -1.5 and trend_1h <= -2.5:
+            regime = "TREND_DOWN"
+            bias = "SHORT"
+            risk = 80
+        elif abs(trend_5m) >= 0.6 and abs(trend_15m) >= 1.0:
+            regime = "TRENDING"
+            bias = "LONG" if trend_15m > 0 else "SHORT"
+            risk = 65
+
+        if vol_5m > 0.012:
+            risk = min(95, risk + 15)
+
+        return {
+            "btc_regime": regime,
+            "btc_bias": bias,
+            "btc_risk": risk,
+            "btc_5m": round(trend_5m, 4),
+            "btc_15m": round(trend_15m, 4),
+            "btc_1h": round(trend_1h, 4),
+            "btc_vol_5m": round(vol_5m, 6)
+        }
+
+    def build_predict_filter(self, row):
+        pair_name = str(row.get("pair", "")).strip().upper()
+        actual_x_score = self._safe_float(row.get("x_score", 50.0))
+        status = str(row.get("status", "WAIT")).strip().upper()
+
+        market = self.get_pair_market_data(pair_name)
+        if not market or market.get("error"):
+            return {
+                "predict_direction": "NEUTRAL",
+                "reversion_prob": 50,
+                "trend_risk": 70,
+                "entry_filter": "BLOCK",
+                "exit_bias": "HOLD",
+                "btc_regime": "UNKNOWN",
+                "btc_bias": "NONE",
+                "predict_reason": f"PREDICT_ERROR: {market.get('error', 'DATA_EMPTY') if market else 'DATA_EMPTY'}"
+            }
+
+        left = market["left"]
+        right = market["right"]
+        left_score, right_score = self.score_direction(market)
+        btc = self.get_btc_market_filter()
+        leader = self.get_pair_leader_filter(pair_name)
+
+        reversion_prob = 50
+        trend_risk = 35
+        predict_direction = "NEUTRAL"
+        entry_filter = "BLOCK"
+        exit_bias = "HOLD"
+
+        if actual_x_score <= 35:
+            predict_direction = "LONG"
+            reversion_prob += 18
+        elif actual_x_score >= 65:
+            predict_direction = "SHORT"
+            reversion_prob += 18
+
+        if actual_x_score <= 25:
+            reversion_prob += 12
+        elif actual_x_score >= 75:
+            reversion_prob += 12
+
+        if predict_direction == "LONG":
+            if left_score >= 2:
+                reversion_prob += 10
+            else:
+                trend_risk += 12
+
+            if left["pressure"] < 1.20:
+                reversion_prob += 8
+            else:
+                trend_risk += 10
+
+            if left["trend_5m"] >= -2.5:
+                reversion_prob += 5
+            else:
+                trend_risk += 12
+
+            if btc["btc_bias"] == "SHORT":
+                trend_risk += 18
+            elif btc["btc_bias"] == "LONG":
+                reversion_prob += 4
+
+        elif predict_direction == "SHORT":
+            if right_score >= 2:
+                reversion_prob += 10
+            else:
+                trend_risk += 12
+
+            if left["pressure"] > 0.80:
+                reversion_prob += 8
+            else:
+                trend_risk += 10
+
+            if left["trend_5m"] <= 2.5:
+                reversion_prob += 5
+            else:
+                trend_risk += 12
+
+            if btc["btc_bias"] == "LONG":
+                trend_risk += 18
+            elif btc["btc_bias"] == "SHORT":
+                reversion_prob += 4
+
+        if not leader["same_leader"]:
+            trend_risk += 22
+            reversion_prob -= 18
+
+        if leader["leader_match_prob"] < 55:
+            trend_risk += 15
+            reversion_prob -= 10
+
+        if left["volatility_5m"] > 0.08 or right["volatility_5m"] > 0.08:
+            trend_risk += 15
+
+        if status in ["LONG_ENTRY", "SHORT_ENTRY"]:
+            reversion_prob += 4
+
+        reversion_prob = int(self._clamp(reversion_prob, 5, 95))
+        trend_risk = int(self._clamp(trend_risk + btc["btc_risk"] * 0.15, 5, 95))
+
+        if (
+            predict_direction in ["LONG", "SHORT"]
+            and reversion_prob >= 62
+            and trend_risk <= 62
+            and leader["same_leader"]
+            and leader["leader_match_prob"] >= 55
+        ):
+            entry_filter = "ALLOW"
+
+        if predict_direction == "LONG" and (actual_x_score < 18 or trend_risk >= 72):
+            exit_bias = "EXIT_LONG"
+        elif predict_direction == "SHORT" and (actual_x_score > 82 or trend_risk >= 72):
+            exit_bias = "EXIT_SHORT"
+
+        return {
+            "predict_direction": predict_direction,
+            "reversion_prob": reversion_prob,
+            "trend_risk": trend_risk,
+            "entry_filter": entry_filter,
+            "exit_bias": exit_bias,
+            "btc_regime": btc["btc_regime"],
+            "btc_bias": btc["btc_bias"],
+            "predict_reason": (
+                f"PREDICT={predict_direction}, rev={reversion_prob}, risk={trend_risk}, "
+                f"btc={btc['btc_regime']}/{btc['btc_bias']}, "
+                f"leader={leader['left_leader']}-{leader['right_leader']}/{leader['leader_match_prob']} | "
+                f"{self.build_reason(market, left_score, right_score)}"
+            )
+        }
+
+    def _long_range(self, x_score, left_score, pressure):
+        start_x = self._clamp(self._round_x(x_score - 7), 5, 35)
+        end_x = self._clamp(self._round_x(x_score + 14), 18, 50)
+
+        if left_score >= 2 and pressure < 1.20:
+            end_x = self._clamp(end_x + 5, 18, 52)
 
         if start_x >= end_x:
-            start_x = max(5, end_x - 7)
+            start_x = max(5, end_x - 8)
 
         return start_x, end_x
 
     def _short_range(self, x_score, right_score, pressure):
-        start_x = self._clamp(self._round_x(x_score - 12), 50, 84)
-        end_x = self._clamp(self._round_x(x_score + 6), 70, 95)
+        start_x = self._clamp(self._round_x(x_score - 14), 48, 85)
+        end_x = self._clamp(self._round_x(x_score + 7), 68, 95)
 
-        if right_score >= 2 and pressure > 0.85:
-            start_x = self._clamp(start_x - 4, 48, 84)
+        if right_score >= 2 and pressure > 0.80:
+            start_x = self._clamp(start_x - 5, 45, 85)
 
         if start_x >= end_x:
-            start_x = max(48, end_x - 7)
+            start_x = max(45, end_x - 8)
 
         return start_x, end_x
 
@@ -363,54 +629,64 @@ class JarvisPlenX:
         right = market["right"]
         left_score, right_score = self.score_direction(market)
         reason = self.build_reason(market, left_score, right_score)
+        btc = self.get_btc_market_filter()
+        leader = self.get_pair_leader_filter(pair_name)
 
-        if left["volatility_5m"] > 0.06 or right["volatility_5m"] > 0.06:
+        if left["volatility_5m"] > 0.08 or right["volatility_5m"] > 0.08:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"단기 변동성 과도 | {reason}",
+                "jarvis_reason": f"단기 변동성 과도 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']}/{leader['right_leader']} | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
 
-        if actual_x_score <= 44 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
-            if left_score >= 2 and left["pressure"] < 1.15 and left["trend_5m"] >= -1.8:
+        if not leader["same_leader"] or leader["leader_match_prob"] < 55:
+            return {
+                "jarvis_status": "WAIT",
+                "jarvis_reason": f"리더 코인 불일치/약함 | LEADER={leader['left_leader']}/{leader['right_leader']} ({leader['leader_match_prob']}) | {reason}",
+                "jarvis_start": "-",
+                "jarvis_end": "-"
+            }
+
+        if actual_x_score <= 40 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
+            if left_score >= 2 and left["pressure"] < 1.25 and left["trend_5m"] >= -2.5 and btc["btc_bias"] != "SHORT":
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
                 return {
                     "jarvis_status": "LONG",
-                    "jarvis_reason": f"LONG 보정 승인 | {reason}",
+                    "jarvis_reason": f"LONG 공격형 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                     "jarvis_start": start_x,
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score >= 56 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
-            if right_score >= 2 and left["pressure"] > 0.75 and left["trend_5m"] <= 2.5:
+        if actual_x_score >= 60 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
+            if right_score >= 2 and left["pressure"] > 0.75 and left["trend_5m"] <= 2.5 and btc["btc_bias"] != "LONG":
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
                 return {
                     "jarvis_status": "SHORT",
-                    "jarvis_reason": f"SHORT 보정 승인 | {reason}",
+                    "jarvis_reason": f"SHORT 공격형 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                     "jarvis_start": start_x,
                     "jarvis_end": end_x
                 }
 
-        if actual_x_score <= 44:
+        if actual_x_score <= 40:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"LONG 후보지만 보수적 대기 | {reason}",
+                "jarvis_reason": f"LONG 후보지만 보수적 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
 
-        if actual_x_score >= 56:
+        if actual_x_score >= 60:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"SHORT 후보지만 보수적 대기 | {reason}",
+                "jarvis_reason": f"SHORT 후보지만 보수적 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
 
         return {
             "jarvis_status": "SKIP",
-            "jarvis_reason": f"중립 구간 | {reason}",
+            "jarvis_reason": f"중립 구간 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
             "jarvis_start": "-",
             "jarvis_end": "-"
         }
