@@ -502,20 +502,20 @@ class JarvisPlenX:
             if left_score >= 2:
                 reversion_prob += 10
             else:
-                trend_risk += 12
+                trend_risk += 10
 
-            if left["pressure"] < 1.20:
+            if left["pressure"] < 1.25:
                 reversion_prob += 8
+            else:
+                trend_risk += 8
+
+            if left["trend_5m"] >= -3.0:
+                reversion_prob += 5
             else:
                 trend_risk += 10
 
-            if left["trend_5m"] >= -2.5:
-                reversion_prob += 5
-            else:
-                trend_risk += 12
-
             if btc["btc_bias"] == "SHORT":
-                trend_risk += 18
+                trend_risk += 14
             elif btc["btc_bias"] == "LONG":
                 reversion_prob += 4
 
@@ -523,52 +523,60 @@ class JarvisPlenX:
             if right_score >= 2:
                 reversion_prob += 10
             else:
-                trend_risk += 12
+                trend_risk += 10
 
-            if left["pressure"] > 0.80:
+            if left["pressure"] > 0.75:
                 reversion_prob += 8
+            else:
+                trend_risk += 8
+
+            if left["trend_5m"] <= 3.0:
+                reversion_prob += 5
             else:
                 trend_risk += 10
 
-            if left["trend_5m"] <= 2.5:
-                reversion_prob += 5
-            else:
-                trend_risk += 12
-
             if btc["btc_bias"] == "LONG":
-                trend_risk += 18
+                trend_risk += 14
             elif btc["btc_bias"] == "SHORT":
                 reversion_prob += 4
 
         if not leader["same_leader"]:
-            trend_risk += 22
-            reversion_prob -= 18
+            trend_risk += 12
+            reversion_prob -= 8
 
-        if leader["leader_match_prob"] < 55:
-            trend_risk += 15
-            reversion_prob -= 10
+        if leader["leader_match_prob"] < 45:
+            trend_risk += 10
+            reversion_prob -= 6
 
-        if left["volatility_5m"] > 0.08 or right["volatility_5m"] > 0.08:
-            trend_risk += 15
+        if left["volatility_5m"] > 0.10 or right["volatility_5m"] > 0.10:
+            trend_risk += 12
 
         if status in ["LONG_ENTRY", "SHORT_ENTRY"]:
             reversion_prob += 4
 
         reversion_prob = int(self._clamp(reversion_prob, 5, 95))
-        trend_risk = int(self._clamp(trend_risk + btc["btc_risk"] * 0.15, 5, 95))
+        trend_risk = int(self._clamp(trend_risk + btc["btc_risk"] * 0.12, 5, 95))
+
+        is_extreme_zone = actual_x_score <= 30 or actual_x_score >= 70
 
         if (
             predict_direction in ["LONG", "SHORT"]
-            and reversion_prob >= 62
-            and trend_risk <= 62
-            and leader["same_leader"]
-            and leader["leader_match_prob"] >= 55
+            and reversion_prob >= 58
+            and trend_risk <= 68
+            and leader["leader_match_prob"] >= 45
+        ):
+            entry_filter = "ALLOW"
+        elif (
+            predict_direction in ["LONG", "SHORT"]
+            and is_extreme_zone
+            and reversion_prob >= 54
+            and trend_risk <= 72
         ):
             entry_filter = "ALLOW"
 
-        if predict_direction == "LONG" and (actual_x_score < 18 or trend_risk >= 72):
+        if predict_direction == "LONG" and (actual_x_score < 15 or trend_risk >= 80):
             exit_bias = "EXIT_LONG"
-        elif predict_direction == "SHORT" and (actual_x_score > 82 or trend_risk >= 72):
+        elif predict_direction == "SHORT" and (actual_x_score > 85 or trend_risk >= 80):
             exit_bias = "EXIT_SHORT"
 
         return {
@@ -632,7 +640,7 @@ class JarvisPlenX:
         btc = self.get_btc_market_filter()
         leader = self.get_pair_leader_filter(pair_name)
 
-        if left["volatility_5m"] > 0.08 or right["volatility_5m"] > 0.08:
+        if left["volatility_5m"] > 0.10 or right["volatility_5m"] > 0.10:
             return {
                 "jarvis_status": "WAIT",
                 "jarvis_reason": f"단기 변동성 과도 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']}/{leader['right_leader']} | {reason}",
@@ -640,16 +648,16 @@ class JarvisPlenX:
                 "jarvis_end": "-"
             }
 
-        if not leader["same_leader"] or leader["leader_match_prob"] < 55:
+        if leader["leader_match_prob"] < 35:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"리더 코인 불일치/약함 | LEADER={leader['left_leader']}/{leader['right_leader']} ({leader['leader_match_prob']}) | {reason}",
+                "jarvis_reason": f"리더 상관 약함 | LEADER={leader['left_leader']}/{leader['right_leader']} ({leader['leader_match_prob']}) | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
 
         if actual_x_score <= 40 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
-            if left_score >= 2 and left["pressure"] < 1.25 and left["trend_5m"] >= -2.5 and btc["btc_bias"] != "SHORT":
+            if left_score >= 2 and left["pressure"] < 1.30 and left["trend_5m"] >= -3.0 and not (btc["btc_bias"] == "SHORT" and actual_x_score > 25):
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
                 return {
                     "jarvis_status": "LONG",
@@ -659,7 +667,7 @@ class JarvisPlenX:
                 }
 
         if actual_x_score >= 60 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
-            if right_score >= 2 and left["pressure"] > 0.75 and left["trend_5m"] <= 2.5 and btc["btc_bias"] != "LONG":
+            if right_score >= 2 and left["pressure"] > 0.70 and left["trend_5m"] <= 3.0 and not (btc["btc_bias"] == "LONG" and actual_x_score < 75):
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
                 return {
                     "jarvis_status": "SHORT",
