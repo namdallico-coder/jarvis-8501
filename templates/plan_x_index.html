@@ -34,6 +34,15 @@
         .agree { background: #14532d; color: #86efac; }
         .conflict { background: #7f1d1d; color: #fecaca; }
         .value-box { line-height: 1.5; white-space: nowrap; font-weight: bold; }
+        .value-strong { line-height: 1.5; white-space: nowrap; font-weight: 800; color: #f8fafc; }
+        .final-range-box {
+            background: #0b1220;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: inline-block;
+            min-width: 90px;
+        }
         .upgrade-table { width: 100%; border-collapse: collapse; margin-top: 14px; background: #0b1220; border-radius: 10px; overflow: hidden; }
         .upgrade-table th, .upgrade-table td { border-bottom: 1px solid #243041; padding: 12px 10px; font-size: 13px; text-align: center; }
         .upgrade-table th { background: #182235; color: #cbd5e1; }
@@ -211,7 +220,6 @@
                 <th>JARVIS 시작/종료</th>
                 <th>비교</th>
                 <th>FINAL</th>
-                <th>FINAL 점수</th>
                 <th>FINAL 시작/종료</th>
                 <th>PREDICT</th>
                 <th>회귀확률</th>
@@ -248,9 +256,12 @@
                     <div class="small">{{ row.final_source }}</div>
                 </td>
                 <td>
-                    <div class="value-box">{{ row.final_score }}</div>
+                    <div class="final-range-box">
+                        <div class="value-strong">{{ row.final_start }}</div>
+                        <div class="small">~</div>
+                        <div class="value-strong">{{ row.final_end }}</div>
+                    </div>
                 </td>
-                <td><div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div></td>
                 <td>
                     {% set pd = row.predict_direction %}
                     <span class="tag {% if pd == 'LONG' %}long{% elif pd == 'SHORT' %}short{% else %}wait{% endif %}">{{ pd }}</span>
