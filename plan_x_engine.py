@@ -104,12 +104,17 @@ def clamp(value, low, high):
 
 def calc_quality(tier, x_score):
     score = 40 if tier == "1" else (28 if tier == "2" else 18)
+
     if 20 <= x_score <= 28 or 72 <= x_score <= 80:
         score += 35
     elif 28 < x_score <= 35 or 65 <= x_score < 72:
         score += 18
     else:
         score += 5
+
+    if x_score <= 15 or x_score >= 85:
+        score += 8
+
     return round(min(score, 100), 2)
 
 
@@ -407,7 +412,7 @@ def decide_final(
     if result == "AGREE" and gpt_direction in ["LONG", "SHORT"]:
         final_start, final_end = choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end)
 
-        if (entry_filter == "ALLOW" and reversion_prob >= 50 and trend_risk <= 80):
+        if entry_filter == "ALLOW" and reversion_prob >= 50 and trend_risk <= 80:
             return gpt_direction, "GPT+JARVIS+PREDICT", final_start, final_end
 
         if extreme_zone and reversion_prob >= 48 and trend_risk <= 85:
@@ -451,25 +456,25 @@ def apply_escape_logic(
         return "EXIT", "LEADER_BREAK"
 
     if final_direction == "LONG":
-        if exit_bias == "EXIT_LONG" and not very_extreme_zone:
+        if exit_bias == "EXIT_LONG" and trend_risk >= 92 and not very_extreme_zone:
             return "EXIT", "PREDICT_EXIT_LONG"
-        if slope_5 < -6.0 and x_score < 10:
+        if slope_5 < -6.5 and x_score < 10:
             return "EXIT", "LONG_BREAKDOWN"
-        if btc_bias == "SHORT" and trend_risk >= 92 and not very_extreme_zone:
+        if btc_bias == "SHORT" and trend_risk >= 94 and not very_extreme_zone:
             return "EXIT", "BTC_SHORT_PRESSURE"
 
     if final_direction == "SHORT":
-        if exit_bias == "EXIT_SHORT" and not very_extreme_zone:
+        if exit_bias == "EXIT_SHORT" and trend_risk >= 92 and not very_extreme_zone:
             return "EXIT", "PREDICT_EXIT_SHORT"
-        if slope_5 > 6.0 and x_score > 90:
+        if slope_5 > 6.5 and x_score > 90:
             return "EXIT", "SHORT_BREAKDOWN"
-        if btc_bias == "LONG" and trend_risk >= 92 and not very_extreme_zone:
+        if btc_bias == "LONG" and trend_risk >= 94 and not very_extreme_zone:
             return "EXIT", "BTC_LONG_PRESSURE"
 
-    if trend_risk >= 95 and not very_extreme_zone:
+    if trend_risk >= 96 and not very_extreme_zone:
         return "EXIT", "TREND_RISK_SPIKE"
 
-    if volatility_20 > 22 and not very_extreme_zone:
+    if volatility_20 > 23 and not very_extreme_zone:
         return "EXIT", "VOLATILITY_SPIKE"
 
     return final_direction, final_source
@@ -487,29 +492,178 @@ def timing_entry_filter(final_direction, x_score, slope_5, volatility_20):
 
     if final_direction == "LONG":
         if very_extreme_zone:
-            return True, "EXTREME_OK"
+            return True, "EXTREME_OK", 8
 
         if slope_5 < -3.5 and not extreme_zone:
-            return False, "LONG_FALLING_FAST"
+            return False, "LONG_FALLING_FAST", -6
 
         if volatility_20 > 20 and not extreme_zone:
-            return False, "VOLATILE"
+            return False, "VOLATILE", -4
 
-        return True, "OK"
+        return True, "OK", 0
 
     if final_direction == "SHORT":
         if very_extreme_zone:
-            return True, "EXTREME_OK"
+            return True, "EXTREME_OK", 8
 
         if slope_5 > 3.5 and not extreme_zone:
-            return False, "SHORT_RISING_FAST"
+            return False, "SHORT_RISING_FAST", -6
 
         if volatility_20 > 20 and not extreme_zone:
-            return False, "VOLATILE"
+            return False, "VOLATILE", -4
 
-        return True, "OK"
+        return True, "OK", 0
 
-    return False, "NO_SIGNAL"
+    return False, "NO_SIGNAL", 0
+
+
+def calc_final_range_score(
+    gpt_direction,
+    jarvis_direction,
+    comparison,
+    x_score,
+    reversion_prob,
+    trend_risk,
+    leader_match_prob,
+    entry_filter,
+    btc_bias,
+    timing_bias
+):
+    score = 35
+
+    if gpt_direction in ["LONG", "SHORT"]:
+        score += 10
+
+    if jarvis_direction in ["LONG", "SHORT"]:
+        score += 10
+
+    if comparison["comparison_result"] == "AGREE":
+        score += 12
+    elif comparison["comparison_result"] == "CONFLICT":
+        score -= 10
+    elif comparison["comparison_result"] in ["WEAK_GPT_ONLY", "WEAK_JARVIS_ONLY"]:
+        score += 4
+
+    score += int((reversion_prob - 50) * 0.28)
+    score -= int((trend_risk - 50) * 0.20)
+    score += int((leader_match_prob - 50) * 0.18)
+
+    if entry_filter == "ALLOW":
+        score += 6
+
+    if btc_bias in ["LONG", "SHORT"]:
+        score += 2
+
+    if x_score <= 15 or x_score >= 85:
+        score += 10
+    elif x_score <= 25 or x_score >= 75:
+        score += 6
+
+    score += int(timing_bias)
+
+    return int(clamp(score, 0, 100))
+
+
+def normalize_final_direction(
+    base_direction,
+    gpt_direction,
+    jarvis_direction,
+    comparison,
+    x_score,
+    reversion_prob,
+    trend_risk,
+    leader_match_prob
+):
+    if base_direction in ["LONG", "SHORT"]:
+        return base_direction, "RECALC_BASE"
+
+    very_extreme_zone = x_score <= 15 or x_score >= 85
+    extreme_zone = x_score <= 25 or x_score >= 75
+
+    if comparison["comparison_result"] == "AGREE" and gpt_direction in ["LONG", "SHORT"]:
+        return gpt_direction, "RECALC_AGREE"
+
+    if gpt_direction in ["LONG", "SHORT"] and jarvis_direction == "WAIT":
+        if very_extreme_zone or (extreme_zone and reversion_prob >= 50 and trend_risk <= 82):
+            return gpt_direction, "RECALC_GPT"
+
+    if jarvis_direction in ["LONG", "SHORT"] and gpt_direction == "WAIT":
+        if very_extreme_zone or (leader_match_prob >= 45 and reversion_prob >= 52 and trend_risk <= 80):
+            return jarvis_direction, "RECALC_JARVIS"
+
+    return "WATCH", "RECALC_WATCH"
+
+
+def recalc_final_range(
+    final_direction,
+    x_score,
+    gpt_start,
+    gpt_end,
+    jarvis_start,
+    jarvis_end,
+    final_range_score,
+    timing_bias
+):
+    if final_direction not in ["LONG", "SHORT"]:
+        return "-", "-"
+
+    starts = []
+    ends = []
+
+    if isinstance(gpt_start, int):
+        starts.append(gpt_start)
+    if isinstance(jarvis_start, int):
+        starts.append(jarvis_start)
+    if isinstance(gpt_end, int):
+        ends.append(gpt_end)
+    if isinstance(jarvis_end, int):
+        ends.append(jarvis_end)
+
+    if not starts or not ends:
+        return "-", "-"
+
+    base_start = sum(starts) / len(starts)
+    base_end = sum(ends) / len(ends)
+
+    width_adj = 0
+    if final_range_score >= 82:
+        width_adj = 4
+    elif final_range_score >= 70:
+        width_adj = 2
+    elif final_range_score <= 45:
+        width_adj = -2
+    elif final_range_score <= 55:
+        width_adj = -1
+
+    if timing_bias >= 6:
+        width_adj += 1
+    elif timing_bias <= -5:
+        width_adj -= 1
+
+    start_x = int(round(base_start - width_adj))
+    end_x = int(round(base_end + width_adj))
+
+    if final_direction == "LONG":
+        if x_score <= 15:
+            start_x = min(start_x, int(round(x_score - 4)))
+            end_x = max(end_x, int(round(x_score + 12)))
+        start_x = clamp(start_x, 0, 45)
+        end_x = clamp(end_x, 5, 49)
+
+    if final_direction == "SHORT":
+        if x_score >= 85:
+            start_x = min(start_x, int(round(x_score - 12)))
+            end_x = max(end_x, int(round(x_score + 4)))
+        start_x = clamp(start_x, 51, 95)
+        end_x = clamp(end_x, 55, 100)
+
+    if start_x >= end_x:
+        if final_direction == "LONG":
+            end_x = clamp(start_x + 5, 5, 49)
+        else:
+            end_x = clamp(start_x + 5, 55, 100)
+
+    return start_x, end_x
 
 
 def build_row(item, history):
@@ -583,7 +737,7 @@ def build_row(item, history):
 
     comparison = compare_gpt_vs_jarvis(gpt_direction, jarvis_direction, jarvis_confidence)
 
-    final_direction, final_source, final_start, final_end = decide_final(
+    base_final_direction, base_final_source, _, _ = decide_final(
         gpt_direction,
         gpt_start,
         gpt_end,
@@ -601,6 +755,48 @@ def build_row(item, history):
         btc_bias,
         same_leader,
         leader_match_prob
+    )
+
+    final_direction, final_source = normalize_final_direction(
+        base_final_direction,
+        gpt_direction,
+        jarvis_direction,
+        comparison,
+        actual_x_score,
+        reversion_prob,
+        trend_risk,
+        leader_match_prob
+    )
+
+    timing_ok, timing_reason, timing_bias = timing_entry_filter(
+        final_direction,
+        actual_x_score,
+        slope_5,
+        volatility_20
+    )
+
+    final_range_score = calc_final_range_score(
+        gpt_direction,
+        jarvis_direction,
+        comparison,
+        actual_x_score,
+        reversion_prob,
+        trend_risk,
+        leader_match_prob,
+        entry_filter,
+        btc_bias,
+        timing_bias
+    )
+
+    final_start, final_end = recalc_final_range(
+        final_direction,
+        actual_x_score,
+        gpt_start,
+        gpt_end,
+        jarvis_start,
+        jarvis_end,
+        final_range_score,
+        timing_bias
     )
 
     auto_stop_loss = calc_dynamic_stop_loss(
@@ -629,25 +825,20 @@ def build_row(item, history):
         final_start = "-"
         final_end = "-"
 
-    timing_ok, timing_reason = timing_entry_filter(
-        final_direction,
-        actual_x_score,
-        slope_5,
-        volatility_20
-    )
-
-    if final_direction in ["LONG", "SHORT"] and not timing_ok:
-        final_direction = "WATCH"
-        final_source = f"TIMING_BLOCK_{timing_reason}"
-        final_start = "-"
-        final_end = "-"
-
     if final_direction == "LONG":
-        status = "LONG_ENTRY"
-        decision = "진입강력"
+        if timing_ok and final_range_score >= 58:
+            status = "LONG_ENTRY"
+            decision = "진입강력"
+        else:
+            status = "LONG_READY"
+            decision = "주의관찰"
     elif final_direction == "SHORT":
-        status = "SHORT_ENTRY"
-        decision = "진입강력"
+        if timing_ok and final_range_score >= 58:
+            status = "SHORT_ENTRY"
+            decision = "진입강력"
+        else:
+            status = "SHORT_READY"
+            decision = "주의관찰"
     elif final_direction == "EXIT":
         status = "EXIT"
         decision = "탈출"
@@ -663,7 +854,9 @@ def build_row(item, history):
         f"LEADER: {left_leader}/{right_leader} ({leader_match_prob})\n"
         f"비교: {comparison['comparison_reason']}\n"
         f"FINAL: {final_direction} ({final_source})\n"
-        f"TIMING: {timing_reason}"
+        f"FINAL_SCORE: {final_range_score}\n"
+        f"FINAL_RANGE: {final_start} ~ {final_end}\n"
+        f"TIMING: {timing_reason} ({timing_bias})"
     )
 
     return {
@@ -729,11 +922,13 @@ def build_row(item, history):
         "final_direction": final_direction,
         "final_status": final_direction,
         "final_source": final_source,
+        "final_range_score": final_range_score,
         "final_start": final_start,
         "final_end": final_end,
 
         "timing_ok": timing_ok,
-        "timing_reason": timing_reason
+        "timing_reason": timing_reason,
+        "timing_bias": timing_bias
     }
 
 
@@ -805,11 +1000,13 @@ def safe_build_row(item, history):
             "final_direction": "WAIT",
             "final_status": "WAIT",
             "final_source": "ERROR",
+            "final_range_score": 0,
             "final_start": "-",
             "final_end": "-",
 
             "timing_ok": False,
-            "timing_reason": "ROW_ERROR"
+            "timing_reason": "ROW_ERROR",
+            "timing_bias": 0
         }
 
 
@@ -859,11 +1056,13 @@ def append_prediction_logs(rows):
 
             "final_direction": r.get("final_direction", ""),
             "final_source": r.get("final_source", ""),
+            "final_range_score": r.get("final_range_score", 0),
             "final_start": r.get("final_start", "-"),
             "final_end": r.get("final_end", "-"),
 
             "timing_ok": r.get("timing_ok", False),
-            "timing_reason": r.get("timing_reason", "")
+            "timing_reason": r.get("timing_reason", ""),
+            "timing_bias": r.get("timing_bias", 0)
         })
 
     logs.extend(new_logs)
@@ -1043,33 +1242,25 @@ def detect_entry_change(rows):
     prev = load_json(LAST_STATUS_FILE, {})
     alerts = []
 
-    valid_entry_sources = ["GPT+JARVIS+PREDICT", "GPT_PREDICT", "JARVIS_PREDICT", "GPT_EXTREME"]
-
     for r in rows:
         pair = r["pair"]
         current_status = str(r.get("status", "")).strip().upper()
-        final_direction = str(r.get("final_direction", "")).strip().upper()
-        final_source = str(r.get("final_source", "")).strip().upper()
 
         prev_data = prev.get(pair, {})
         if isinstance(prev_data, dict):
             prev_status = str(prev_data.get("status", "")).strip().upper()
-            prev_final_direction = str(prev_data.get("final_direction", "")).strip().upper()
-            prev_final_source = str(prev_data.get("final_source", "")).strip().upper()
         else:
             prev_status = ""
-            prev_final_direction = ""
-            prev_final_source = ""
 
         was_wait_or_ready = prev_status in ["WAIT", "LONG_READY", "SHORT_READY", ""]
-        is_entry_now = current_status in ["LONG_ENTRY", "SHORT_ENTRY"] and final_direction in ["LONG", "SHORT"] and final_source in valid_entry_sources
-        was_entry_before = prev_final_direction in ["LONG", "SHORT"] and prev_final_source in valid_entry_sources
+        is_entry_now = current_status in ["LONG_ENTRY", "SHORT_ENTRY"]
 
-        if was_wait_or_ready and is_entry_now and not was_entry_before:
+        if was_wait_or_ready and is_entry_now:
             alerts.append(
                 f"🚨 ENTRY 전환 발생\n"
                 f"{pair}\n"
-                f"FINAL={final_direction} ({final_source})\n"
+                f"FINAL={r.get('final_direction', '-')} ({r.get('final_source', '-')})\n"
+                f"SCORE={r.get('final_range_score', '-')}\n"
                 f"플렌X={r.get('x_score', '-')}\n"
                 f"PREDICT={r.get('predict_direction', '-')}, rev={r.get('reversion_prob', '-')}, risk={r.get('trend_risk', '-')}\n"
                 f"LEADER={r.get('left_leader', '-')}/{r.get('right_leader', '-')} ({r.get('leader_match_prob', '-')})\n"
@@ -1082,7 +1273,8 @@ def detect_entry_change(rows):
         r["pair"]: {
             "status": str(r.get("status", "")).strip().upper(),
             "final_direction": str(r.get("final_direction", "")).strip().upper(),
-            "final_source": str(r.get("final_source", "")).strip().upper()
+            "final_source": str(r.get("final_source", "")).strip().upper(),
+            "final_range_score": int(r.get("final_range_score", 0))
         }
         for r in rows
     }
@@ -1099,6 +1291,7 @@ async def process_cycle(page, state):
         "updated_at": now_kst_str(),
         "count": len(rows),
         "entry_signals": len([r for r in rows if r["status"] in ["LONG_ENTRY", "SHORT_ENTRY"]]),
+        "ready_signals": len([r for r in rows if r["status"] in ["LONG_READY", "SHORT_READY"]]),
         "rows": rows
     }
 
