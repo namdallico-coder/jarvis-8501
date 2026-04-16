@@ -211,6 +211,7 @@
                 <th>JARVIS 시작/종료</th>
                 <th>비교</th>
                 <th>FINAL</th>
+                <th>FINAL 점수</th>
                 <th>FINAL 시작/종료</th>
                 <th>PREDICT</th>
                 <th>회귀확률</th>
@@ -245,6 +246,9 @@
                     {% set fd = row.final_direction %}
                     <span class="tag {% if fd == 'LONG' %}long{% elif fd == 'SHORT' %}short{% elif fd == 'WATCH' %}watch{% elif fd == 'SKIP' %}skip{% elif fd == 'EXIT' %}conflict{% else %}wait{% endif %}">{{ fd }}</span>
                     <div class="small">{{ row.final_source }}</div>
+                </td>
+                <td>
+                    <div class="value-box">{{ row.final_score }}</div>
                 </td>
                 <td><div class="value-box">{{ row.final_start }} / {{ row.final_end }}</div></td>
                 <td>
