@@ -653,7 +653,7 @@ def recalc_final_range(
         if x_score <= 15:
             start_x = min(start_x, int(round(x_score - 4)))
             end_x = max(end_x, int(round(x_score + 12)))
-        start_x = clamp(start_x, 0, 45)
+        start_x = clamp(start_x, 1, 45)
         end_x = clamp(end_x, 5, 49)
 
     if final_direction == "SHORT":
