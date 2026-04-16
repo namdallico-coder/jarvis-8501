@@ -35,6 +35,9 @@
         .conflict { background: #7f1d1d; color: #fecaca; }
         .value-box { line-height: 1.5; white-space: nowrap; font-weight: bold; }
         .value-strong { line-height: 1.5; white-space: nowrap; font-weight: 800; color: #f8fafc; }
+        .score-high { color: #22c55e; font-weight: 800; }
+        .score-mid { color: #f59e0b; font-weight: 800; }
+        .score-low { color: #ef4444; font-weight: 800; }
         .final-range-box {
             background: #0b1220;
             border: 1px solid #334155;
@@ -220,7 +223,9 @@
                 <th>JARVIS 시작/종료</th>
                 <th>비교</th>
                 <th>FINAL</th>
-                <th>FINAL 시작/종료</th>
+                <th>FINAL SCORE</th>
+                <th>FINAL 시작값</th>
+                <th>FINAL 종료값</th>
                 <th>PREDICT</th>
                 <th>회귀확률</th>
                 <th>추세리스크</th>
@@ -256,9 +261,19 @@
                     <div class="small">{{ row.final_source }}</div>
                 </td>
                 <td>
+                    {% set fs = row.final_range_score|int %}
+                    <div class="{% if fs >= 75 %}score-high{% elif fs >= 55 %}score-mid{% else %}score-low{% endif %}">
+                        {{ row.final_range_score }}
+                    </div>
+                    <div class="small">{{ row.timing_reason }}</div>
+                </td>
+                <td>
                     <div class="final-range-box">
                         <div class="value-strong">{{ row.final_start }}</div>
-                        <div class="small">~</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="final-range-box">
                         <div class="value-strong">{{ row.final_end }}</div>
                     </div>
                 </td>
