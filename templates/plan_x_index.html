@@ -261,11 +261,11 @@
                     <div class="small">{{ row.final_source }}</div>
                 </td>
                 <td>
-                    {% set fs = row.final_range_score|int %}
+                    {% set fs = (row.final_range_score if row.final_range_score is defined else 0)|int %}
                     <div class="{% if fs >= 75 %}score-high{% elif fs >= 55 %}score-mid{% else %}score-low{% endif %}">
-                        {{ row.final_range_score }}
+                        {{ fs }}
                     </div>
-                    <div class="small">{{ row.timing_reason }}</div>
+                    <div class="small">{{ row.timing_reason if row.timing_reason is defined else '-' }}</div>
                 </td>
                 <td>
                     <div class="final-range-box">
