@@ -232,7 +232,11 @@ class JarvisPlenX:
 
         same_leader = left_leader["leader_coin"] == right_leader["leader_coin"]
         avg_corr = (left_leader["leader_corr"] + right_leader["leader_corr"]) / 2.0
+
+        # 🔴 안정화 (극단 구간 과도 억제 방지)
         leader_match_prob = int(self._clamp(round(avg_corr * 100), 0, 100))
+        if avg_corr >= 0.55:
+            leader_match_prob = min(100, leader_match_prob + 5)
 
         return {
             "left_leader": left_leader["leader_coin"],
@@ -498,6 +502,11 @@ class JarvisPlenX:
         elif actual_x_score >= 75:
             reversion_prob += 12
 
+        # 🔴 extreme 보호 (핵심 추가)
+        if actual_x_score <= 15 or actual_x_score >= 85:
+            reversion_prob += 8
+            trend_risk -= 6
+
         if predict_direction == "LONG":
             if left_score >= 2:
                 reversion_prob += 10
@@ -541,15 +550,15 @@ class JarvisPlenX:
                 reversion_prob += 4
 
         if not leader["same_leader"]:
-            trend_risk += 12
-            reversion_prob -= 8
-
-        if leader["leader_match_prob"] < 45:
             trend_risk += 10
             reversion_prob -= 6
 
+        if leader["leader_match_prob"] < 45:
+            trend_risk += 8
+            reversion_prob -= 4
+
         if left["volatility_5m"] > 0.10 or right["volatility_5m"] > 0.10:
-            trend_risk += 12
+            trend_risk += 10
 
         if status in ["LONG_ENTRY", "SHORT_ENTRY"]:
             reversion_prob += 4
@@ -561,16 +570,16 @@ class JarvisPlenX:
 
         if (
             predict_direction in ["LONG", "SHORT"]
-            and reversion_prob >= 58
-            and trend_risk <= 68
+            and reversion_prob >= 56
+            and trend_risk <= 70
             and leader["leader_match_prob"] >= 45
         ):
             entry_filter = "ALLOW"
         elif (
             predict_direction in ["LONG", "SHORT"]
             and is_extreme_zone
-            and reversion_prob >= 54
-            and trend_risk <= 72
+            and reversion_prob >= 52
+            and trend_risk <= 75
         ):
             entry_filter = "ALLOW"
 
@@ -657,21 +666,21 @@ class JarvisPlenX:
             }
 
         if actual_x_score <= 40 and status in ["LONG_ENTRY", "LONG_READY", "WAIT", "SKIP"]:
-            if left_score >= 2 and left["pressure"] < 1.30 and left["trend_5m"] >= -3.0 and not (btc["btc_bias"] == "SHORT" and actual_x_score > 25):
+            if left_score >= 2 and left["pressure"] < 1.30 and left["trend_5m"] >= -3.0:
                 start_x, end_x = self._long_range(actual_x_score, left_score, left["pressure"])
                 return {
                     "jarvis_status": "LONG",
-                    "jarvis_reason": f"LONG 공격형 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
+                    "jarvis_reason": f"LONG 강화 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                     "jarvis_start": start_x,
                     "jarvis_end": end_x
                 }
 
         if actual_x_score >= 60 and status in ["SHORT_ENTRY", "SHORT_READY", "WAIT", "SKIP"]:
-            if right_score >= 2 and left["pressure"] > 0.70 and left["trend_5m"] <= 3.0 and not (btc["btc_bias"] == "LONG" and actual_x_score < 75):
+            if right_score >= 2 and left["pressure"] > 0.70 and left["trend_5m"] <= 3.0:
                 start_x, end_x = self._short_range(actual_x_score, right_score, left["pressure"])
                 return {
                     "jarvis_status": "SHORT",
-                    "jarvis_reason": f"SHORT 공격형 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
+                    "jarvis_reason": f"SHORT 강화 승인 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                     "jarvis_start": start_x,
                     "jarvis_end": end_x
                 }
@@ -679,7 +688,7 @@ class JarvisPlenX:
         if actual_x_score <= 40:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"LONG 후보지만 보수적 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
+                "jarvis_reason": f"LONG 후보 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
@@ -687,7 +696,7 @@ class JarvisPlenX:
         if actual_x_score >= 60:
             return {
                 "jarvis_status": "WAIT",
-                "jarvis_reason": f"SHORT 후보지만 보수적 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
+                "jarvis_reason": f"SHORT 후보 대기 | BTC={btc['btc_regime']} | LEADER={leader['left_leader']} | {reason}",
                 "jarvis_start": "-",
                 "jarvis_end": "-"
             }
