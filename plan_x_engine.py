@@ -195,6 +195,12 @@ def calc_status_from_xscore(x_score, slope, volatility):
     if volatility > 12:
         return "WAIT"
 
+    if x_score <= 15:
+        return "LONG_ENTRY"
+
+    if x_score >= 85:
+        return "SHORT_ENTRY"
+
     if x_score <= 28:
         if moving_toward_center(x_score, slope):
             return "LONG_ENTRY"
@@ -400,7 +406,7 @@ def decide_final(
     extreme_zone = x_score <= 32 or x_score >= 68
     very_extreme_zone = x_score <= 15 or x_score >= 85
 
-    if leader_match_prob < 30:
+    if leader_match_prob < 28:
         return "WATCH", "LEADER_FILTER", "-", "-"
 
     if btc_bias == "LONG" and gpt_direction == "SHORT" and not very_extreme_zone:
@@ -412,25 +418,25 @@ def decide_final(
     if result == "AGREE" and gpt_direction in ["LONG", "SHORT"]:
         final_start, final_end = choose_final_range(gpt_start, gpt_end, jarvis_start, jarvis_end)
 
-        if entry_filter == "ALLOW" and reversion_prob >= 50 and trend_risk <= 80:
+        if entry_filter == "ALLOW" and reversion_prob >= 48 and trend_risk <= 82:
             return gpt_direction, "GPT+JARVIS+PREDICT", final_start, final_end
 
-        if extreme_zone and reversion_prob >= 48 and trend_risk <= 85:
+        if extreme_zone and reversion_prob >= 46 and trend_risk <= 86:
             return gpt_direction, "GPT+JARVIS", final_start, final_end
 
         return "WATCH", "PREDICT_FILTER", "-", "-"
 
     if result == "WEAK_GPT_ONLY" and gpt_direction in ["LONG", "SHORT"]:
-        if gpt_direction == predict_direction and extreme_zone and reversion_prob >= 50 and trend_risk <= 80:
+        if gpt_direction == predict_direction and extreme_zone and reversion_prob >= 48 and trend_risk <= 82:
             return gpt_direction, "GPT_PREDICT", gpt_start, gpt_end
 
-        if very_extreme_zone and reversion_prob >= 45:
+        if very_extreme_zone and reversion_prob >= 43:
             return gpt_direction, "GPT_EXTREME", gpt_start, gpt_end
 
         return "WATCH", "PREDICT_FILTER", "-", "-"
 
     if result == "WEAK_JARVIS_ONLY" and jarvis_direction in ["LONG", "SHORT"]:
-        if jarvis_direction == predict_direction and very_extreme_zone and reversion_prob >= 52 and trend_risk <= 78:
+        if jarvis_direction == predict_direction and very_extreme_zone and reversion_prob >= 50 and trend_risk <= 80:
             return jarvis_direction, "JARVIS_PREDICT", jarvis_start, jarvis_end
 
         return "WATCH", "FILTERED", "-", "-"
@@ -452,29 +458,29 @@ def apply_escape_logic(
 ):
     very_extreme_zone = x_score <= 15 or x_score >= 85
 
-    if leader_match_prob < 15 and not very_extreme_zone:
+    if leader_match_prob < 10 and not very_extreme_zone:
         return "EXIT", "LEADER_BREAK"
 
     if final_direction == "LONG":
-        if exit_bias == "EXIT_LONG" and trend_risk >= 92 and not very_extreme_zone:
+        if exit_bias == "EXIT_LONG" and trend_risk >= 96 and not very_extreme_zone:
             return "EXIT", "PREDICT_EXIT_LONG"
-        if slope_5 < -6.5 and x_score < 10:
+        if slope_5 < -7.5 and x_score < 8:
             return "EXIT", "LONG_BREAKDOWN"
-        if btc_bias == "SHORT" and trend_risk >= 94 and not very_extreme_zone:
+        if btc_bias == "SHORT" and trend_risk >= 97 and not very_extreme_zone:
             return "EXIT", "BTC_SHORT_PRESSURE"
 
     if final_direction == "SHORT":
-        if exit_bias == "EXIT_SHORT" and trend_risk >= 92 and not very_extreme_zone:
+        if exit_bias == "EXIT_SHORT" and trend_risk >= 96 and not very_extreme_zone:
             return "EXIT", "PREDICT_EXIT_SHORT"
-        if slope_5 > 6.5 and x_score > 90:
+        if slope_5 > 7.5 and x_score > 92:
             return "EXIT", "SHORT_BREAKDOWN"
-        if btc_bias == "LONG" and trend_risk >= 94 and not very_extreme_zone:
+        if btc_bias == "LONG" and trend_risk >= 97 and not very_extreme_zone:
             return "EXIT", "BTC_LONG_PRESSURE"
 
-    if trend_risk >= 96 and not very_extreme_zone:
+    if trend_risk >= 98 and not very_extreme_zone:
         return "EXIT", "TREND_RISK_SPIKE"
 
-    if volatility_20 > 23 and not very_extreme_zone:
+    if volatility_20 > 25 and not very_extreme_zone:
         return "EXIT", "VOLATILITY_SPIKE"
 
     return final_direction, final_source
@@ -529,7 +535,7 @@ def calc_final_range_score(
     btc_bias,
     timing_bias
 ):
-    score = 35
+    score = 38
 
     if gpt_direction in ["LONG", "SHORT"]:
         score += 10
@@ -538,26 +544,26 @@ def calc_final_range_score(
         score += 10
 
     if comparison["comparison_result"] == "AGREE":
-        score += 12
+        score += 14
     elif comparison["comparison_result"] == "CONFLICT":
-        score -= 10
+        score -= 8
     elif comparison["comparison_result"] in ["WEAK_GPT_ONLY", "WEAK_JARVIS_ONLY"]:
-        score += 4
+        score += 5
 
-    score += int((reversion_prob - 50) * 0.28)
-    score -= int((trend_risk - 50) * 0.20)
-    score += int((leader_match_prob - 50) * 0.18)
+    score += int((reversion_prob - 50) * 0.32)
+    score -= int((trend_risk - 50) * 0.16)
+    score += int((leader_match_prob - 50) * 0.20)
 
     if entry_filter == "ALLOW":
-        score += 6
+        score += 8
 
     if btc_bias in ["LONG", "SHORT"]:
         score += 2
 
     if x_score <= 15 or x_score >= 85:
-        score += 10
+        score += 12
     elif x_score <= 25 or x_score >= 75:
-        score += 6
+        score += 7
 
     score += int(timing_bias)
 
@@ -584,11 +590,11 @@ def normalize_final_direction(
         return gpt_direction, "RECALC_AGREE"
 
     if gpt_direction in ["LONG", "SHORT"] and jarvis_direction == "WAIT":
-        if very_extreme_zone or (extreme_zone and reversion_prob >= 50 and trend_risk <= 82):
+        if very_extreme_zone or (extreme_zone and reversion_prob >= 48 and trend_risk <= 84):
             return gpt_direction, "RECALC_GPT"
 
     if jarvis_direction in ["LONG", "SHORT"] and gpt_direction == "WAIT":
-        if very_extreme_zone or (leader_match_prob >= 45 and reversion_prob >= 52 and trend_risk <= 80):
+        if very_extreme_zone or (leader_match_prob >= 42 and reversion_prob >= 50 and trend_risk <= 82):
             return jarvis_direction, "RECALC_JARVIS"
 
     return "WATCH", "RECALC_WATCH"
@@ -799,6 +805,10 @@ def build_row(item, history):
         timing_bias
     )
 
+    if final_direction == "LONG":
+        if isinstance(final_start, (int, float)) and final_start <= 0:
+            final_start = 1
+
     auto_stop_loss = calc_dynamic_stop_loss(
         final_direction,
         actual_x_score,
@@ -826,14 +836,14 @@ def build_row(item, history):
         final_end = "-"
 
     if final_direction == "LONG":
-        if timing_ok and final_range_score >= 58:
+        if (timing_ok and final_range_score >= 55) or (actual_x_score <= 15 and final_range_score >= 50):
             status = "LONG_ENTRY"
             decision = "진입강력"
         else:
             status = "LONG_READY"
             decision = "주의관찰"
     elif final_direction == "SHORT":
-        if timing_ok and final_range_score >= 58:
+        if (timing_ok and final_range_score >= 55) or (actual_x_score >= 85 and final_range_score >= 50):
             status = "SHORT_ENTRY"
             decision = "진입강력"
         else:
