@@ -475,6 +475,43 @@ def apply_escape_logic(
     return final_direction, final_source
 
 
+def timing_entry_filter(final_direction, x_score, slope_5, volatility_20):
+    """
+    FINAL 이후 실전 진입 타이밍 필터
+    - 플렌X 시작/종료 구간은 유지
+    - 너무 급하게 벌어지는 순간만 잠깐 보류
+    """
+
+    very_extreme_zone = x_score <= 15 or x_score >= 85
+    extreme_zone = x_score <= 25 or x_score >= 75
+
+    if final_direction == "LONG":
+        if very_extreme_zone:
+            return True, "EXTREME_OK"
+
+        if slope_5 < -3.5 and not extreme_zone:
+            return False, "LONG_FALLING_FAST"
+
+        if volatility_20 > 20 and not extreme_zone:
+            return False, "VOLATILE"
+
+        return True, "OK"
+
+    if final_direction == "SHORT":
+        if very_extreme_zone:
+            return True, "EXTREME_OK"
+
+        if slope_5 > 3.5 and not extreme_zone:
+            return False, "SHORT_RISING_FAST"
+
+        if volatility_20 > 20 and not extreme_zone:
+            return False, "VOLATILE"
+
+        return True, "OK"
+
+    return False, "NO_SIGNAL"
+
+
 def build_row(item, history):
     pair = item["pair"].strip().upper()
     tier = str(item.get("tier", "1"))
@@ -592,6 +629,19 @@ def build_row(item, history):
         final_start = "-"
         final_end = "-"
 
+    timing_ok, timing_reason = timing_entry_filter(
+        final_direction,
+        actual_x_score,
+        slope_5,
+        volatility_20
+    )
+
+    if final_direction in ["LONG", "SHORT"] and not timing_ok:
+        final_direction = "WATCH"
+        final_source = f"TIMING_BLOCK_{timing_reason}"
+        final_start = "-"
+        final_end = "-"
+
     if final_direction == "LONG":
         status = "LONG_ENTRY"
         decision = "진입강력"
@@ -612,7 +662,8 @@ def build_row(item, history):
         f"PREDICT: {predict_reason}\n"
         f"LEADER: {left_leader}/{right_leader} ({leader_match_prob})\n"
         f"비교: {comparison['comparison_reason']}\n"
-        f"FINAL: {final_direction} ({final_source})"
+        f"FINAL: {final_direction} ({final_source})\n"
+        f"TIMING: {timing_reason}"
     )
 
     return {
@@ -679,7 +730,10 @@ def build_row(item, history):
         "final_status": final_direction,
         "final_source": final_source,
         "final_start": final_start,
-        "final_end": final_end
+        "final_end": final_end,
+
+        "timing_ok": timing_ok,
+        "timing_reason": timing_reason
     }
 
 
@@ -752,7 +806,10 @@ def safe_build_row(item, history):
             "final_status": "WAIT",
             "final_source": "ERROR",
             "final_start": "-",
-            "final_end": "-"
+            "final_end": "-",
+
+            "timing_ok": False,
+            "timing_reason": "ROW_ERROR"
         }
 
 
@@ -803,7 +860,10 @@ def append_prediction_logs(rows):
             "final_direction": r.get("final_direction", ""),
             "final_source": r.get("final_source", ""),
             "final_start": r.get("final_start", "-"),
-            "final_end": r.get("final_end", "-")
+            "final_end": r.get("final_end", "-"),
+
+            "timing_ok": r.get("timing_ok", False),
+            "timing_reason": r.get("timing_reason", "")
         })
 
     logs.extend(new_logs)
